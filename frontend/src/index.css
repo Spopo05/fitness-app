@@ -1,0 +1,128 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+
+* {
+  @apply border-gray-200;
+  }
+
+body {
+@apply bg-gray-50 text-gray-900 font-sans;
+font-family: 'Cairo', 'Inter', sans-serif;
+font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+h1, h2, h3, h4, h5, h6 {
+@apply font-semibold;
+line-height: 1.2;
+}
+
+p {
+line-height: 1.5;
+}
+}
+
+@layer components {
+.btn {
+@apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-primary {
+@apply btn bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+}
+
+.btn-secondary {
+@apply btn bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500;
+}
+
+.btn-accent {
+@apply btn bg-amber-600 text-white hover:bg-amber-700 focus:ring-amber-500;
+}
+
+.btn-success {
+@apply btn bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
+}
+
+.input {
+@apply block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors;
+}
+
+.card {
+@apply bg-white rounded-xl shadow-sm border border-gray-200 p-6;
+}
+
+.card-hover {
+@apply card hover:shadow-md transition-shadow duration-200;
+}
+
+.sidebar-link {
+@apply flex items-center px-4 py-3 text-gray-700 rounded-lg hover:bg-gray-100 transition-colors duration-200;
+}
+
+.sidebar-link.active {
+@apply bg-blue-50 text-blue-700 border-r-2 border-blue-600;
+}
+}
+
+@layer utilities {
+.text-balance {
+text-wrap: balance;
+}
+
+.scrollbar-hide {
+-ms-overflow-style: none;
+scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+display: none;
+}
+}
+
+/* Animations */
+@keyframes shimmer {
+0% { background-position: -200px 0; }
+100% { background-position: calc(200px + 100%) 0; }
+}
+
+.shimmer {
+background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+background-size: 200px 100%;
+animation: shimmer 1.5s infinite;
+}
+
+/* ============================================ */
+/* ✅ CLEAN RTL SUPPORT (FINAL - NO CONFLICTS) */
+/* ============================================ */
+
+[dir="rtl"] {
+direction: rtl;
+text-align: right;
+}
+
+/* Fix spacing safely */
+[dir="rtl"] .ml-auto {
+margin-left: 0;
+margin-right: auto;
+}
+
+[dir="rtl"] .mr-auto {
+margin-right: 0;
+margin-left: auto;
+}
+
+/* Fix text alignment */
+[dir="rtl"] .text-left {
+text-align: right;
+}
+
+[dir="rtl"] .text-right {
+text-align: right;
+}
+
+/* Optional: prevent Arabic text breaking */
+[dir="rtl"] span {
+word-break: keep-all;
+}
