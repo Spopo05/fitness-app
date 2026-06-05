@@ -1,7 +1,8 @@
 import { Link, useLocation } from 'react-router-dom'
 import { 
   Users, MessageCircle, User, Dumbbell, Utensils, CreditCard, 
-  LayoutDashboard, Sparkles, X, ChevronLeft, ChevronRight, LogOut, Settings
+  LayoutDashboard, Sparkles, X, ChevronLeft, ChevronRight, LogOut, Settings,
+  Bot, Brain, Zap
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTranslation } from 'react-i18next'
@@ -10,49 +11,50 @@ import { useState } from 'react'
 const Sidebar = ({ isOpen, onClose, userRole, isRTL = false }) => {
   const location = useLocation()
   const { user, logout } = useAuth()
-  const { t } = useTranslation()
+  const { t } = useTranslation()  // ✅ Keep this
   const [collapsed, setCollapsed] = useState(false)
 
   const role = userRole || user?.role
 
-  // Define menu items directly
+  // Define menu items with translations
   const getNavigationItems = () => {
-    // For admin role - ADD ALL MENU ITEMS
+    // For admin role
     if (role === 'admin') {
       return [
-        { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-        { name: 'Users', href: '/users', icon: Users },  // Added Users
-        { name: 'Subscriptions', href: '/subscriptions', icon: CreditCard },  // Added Subscriptions
-        { name: 'Profile', href: '/profile', icon: User },
+        { name: t('sidebar.dashboard'), href: '/', icon: LayoutDashboard },
+        { name: t('sidebar.users'), href: '/users', icon: Users },
+        { name: t('sidebar.subscriptions'), href: '/subscriptions', icon: CreditCard },
+        { name: t('sidebar.profile'), href: '/profile', icon: User },
       ]
     }
     
     // For coach role
     if (role === 'coach') {
       return [
-        { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-        { name: 'Clients', href: '/clients', icon: Users },
-        { name: 'Messages', href: '/messages', icon: MessageCircle },
-        { name: 'Profile', href: '/profile', icon: User },
+        { name: t('sidebar.dashboard'), href: '/', icon: LayoutDashboard },
+        { name: t('sidebar.myClients'), href: '/clients', icon: Users },
+        { name: t('sidebar.messages'), href: '/messages', icon: MessageCircle },
+        { name: t('sidebar.profile'), href: '/profile', icon: User },
       ]
     }
     
     // For user role
     if (role === 'user') {
       return [
-        { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-        { name: 'Workouts', href: '/workouts', icon: Dumbbell },
-        { name: 'Diet Plan', href: '/diet-plan', icon: Utensils },
-        { name: 'Messages', href: '/messages', icon: MessageCircle },
-        { name: 'Subscription', href: '/subscription', icon: Sparkles },
-        { name: 'Profile', href: '/profile', icon: User },
+        { name: t('sidebar.dashboard'), href: '/', icon: LayoutDashboard },
+        { name: t('sidebar.aiAssistant'), href: '/ai-assistant', icon: Bot },
+        { name: t('sidebar.workouts'), href: '/workouts', icon: Dumbbell },
+        { name: t('sidebar.dietPlan'), href: '/diet-plan', icon: Utensils },
+        { name: t('sidebar.messages'), href: '/messages', icon: MessageCircle },
+        { name: t('sidebar.subscription'), href: '/subscription', icon: Sparkles },
+        { name: t('sidebar.profile'), href: '/profile', icon: User },
       ]
     }
     
     // Default fallback
     return [
-      { name: 'Dashboard', href: '/', icon: LayoutDashboard },
-      { name: 'Profile', href: '/profile', icon: User },
+      { name: t('sidebar.dashboard'), href: '/', icon: LayoutDashboard },
+      { name: t('sidebar.profile'), href: '/profile', icon: User },
     ]
   }
 
@@ -188,7 +190,7 @@ const Sidebar = ({ isOpen, onClose, userRole, isRTL = false }) => {
             <div className="w-9 h-9 rounded-lg flex items-center justify-center">
               <Settings className="h-5 w-5 text-gray-400" />
             </div>
-            {!collapsed && <span>Settings</span>}
+            {!collapsed && <span>{t('sidebar.settings')}</span>}
           </Link>
 
           <button
@@ -203,7 +205,7 @@ const Sidebar = ({ isOpen, onClose, userRole, isRTL = false }) => {
             <div className="w-9 h-9 rounded-lg flex items-center justify-center">
               <LogOut className="h-5 w-5 text-red-500" />
             </div>
-            {!collapsed && <span>Logout</span>}
+            {!collapsed && <span>{t('sidebar.logout')}</span>}
           </button>
 
           {/* Collapse/Expand Button */}
@@ -219,12 +221,12 @@ const Sidebar = ({ isOpen, onClose, userRole, isRTL = false }) => {
             {collapsed ? (
               <>
                 <ChevronRight className="h-4 w-4" />
-                <span className="text-xs">Expand</span>
+                <span className="text-xs">{t('sidebar.expand')}</span>
               </>
             ) : (
               <>
                 <ChevronLeft className="h-4 w-4" />
-                <span className="text-xs">Collapse</span>
+                <span className="text-xs">{t('sidebar.collapse')}</span>
               </>
             )}
           </button>

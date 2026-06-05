@@ -70,15 +70,19 @@
   },
   "sidebar": {
     "dashboard": "Dashboard",
-    "workouts": "Workouts",
-    "dietPlan": "Diet Plan",
-    "messages": "Messages",
-    "subscription": "Subscription",
-    "profile": "Profile",
-    "myClients": "My Clients",
     "users": "Users",
     "subscriptions": "Subscriptions",
-    "analytics": "Analytics"
+    "profile": "Profile",
+    "myClients": "My Clients",
+    "messages": "Messages",
+    "aiAssistant": "AI Assistant",
+    "workouts": "Workouts",
+    "dietPlan": "Diet Plan",
+    "subscription": "Subscription",
+    "settings": "Settings",
+    "logout": "Logout",
+    "expand": "Expand",
+    "collapse": "Collapse"
   },
   "workouts": {
   "title": "Workouts",

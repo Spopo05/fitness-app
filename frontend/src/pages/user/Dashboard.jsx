@@ -9,7 +9,6 @@ import {
   TrendingUp, 
   Activity,
   Apple,
-  MessageCircle,
   Clock,
   User,
   ChevronRight,
@@ -19,7 +18,13 @@ import {
   Star,
   ArrowUp,
   ArrowDown,
-  Zap
+  Zap,
+  Sparkles,
+  Award,
+  Dumbbell,
+  Battery,
+  Crown,
+  Medal
 } from 'lucide-react'
 import { format, differenceInHours } from 'date-fns'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
@@ -28,11 +33,21 @@ import LoadingSpinner from '../../components/LoadingSpinner'
 import ProfilePictureModal from '../../components/ProfilePictureModal'
 
 const Dashboard = () => {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { user } = useAuth()
   const navigate = useNavigate()
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [selectedCoach, setSelectedCoach] = useState(null)
+  const [hoveredStat, setHoveredStat] = useState(null)
+
+  const isRTL = i18n.language === 'ar'
+  const isFrench = i18n.language === 'fr'
+
+  const getText = (en, fr, ar) => {
+    if (isFrench) return fr
+    if (isRTL) return ar
+    return en
+  }
   
   // Fetch upcoming workouts
   const { data: workouts, isLoading: workoutsLoading } = useQuery({
@@ -113,6 +128,23 @@ const Dashboard = () => {
   const weightChange = latestWeight && firstWeight ? (latestWeight - firstWeight).toFixed(1) : null
   const isWeightDown = weightChange && weightChange < 0
 
+  // Calculate BMI
+  const bmi = user?.height && latestWeight ? (latestWeight / ((user.height / 100) ** 2)).toFixed(1) : null
+  const getBMICategory = () => {
+    if (!bmi) return null
+    if (bmi < 18.5) return { text: 'Underweight', color: 'blue', icon: '🔵' }
+    if (bmi < 25) return { text: 'Healthy', color: 'green', icon: '🟢' }
+    if (bmi < 30) return { text: 'Overweight', color: 'yellow', icon: '🟡' }
+    return { text: 'Obese', color: 'red', icon: '🔴' }
+  }
+  const bmiCategory = getBMICategory()
+
+  // Calculate fitness score
+  const fitnessScore = Math.min(100, Math.floor(
+    (weightHistory?.length || 0) * 2 + 
+    (weightChange ? (isWeightDown ? Math.abs(weightChange) * 5 : 0) : 0) + 50
+  ))
+
   const formatWeightData = (data) => {
     return data?.slice(-7).map(entry => ({
       date: format(new Date(entry.date), 'MM/dd'),
@@ -129,320 +161,453 @@ const Dashboard = () => {
 
   if (workoutsLoading || weightLoading || dietPlansLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex items-center justify-center h-96">
         <LoadingSpinner size="lg" />
       </div>
     )
   }
 
+  const stats = [
+    {
+      id: 'workouts',
+      title: getText('Workouts', 'Entraînements', 'التمارين'),
+      value: workouts?.length || 0,
+      sub: getText('Upcoming', 'À venir', 'القادمة'),
+      icon: Calendar,
+      bgGradient: 'from-blue-500 to-blue-600',
+      iconBg: 'bg-blue-50',
+      iconColor: 'text-blue-500',
+      gradient: 'from-blue-50 to-blue-100'
+    },
+    {
+      id: 'weight',
+      title: getText('Current Weight', 'Poids actuel', 'الوزن الحالي'),
+      value: latestWeight || '—',
+      sub: 'kg',
+      icon: Target,
+      bgGradient: 'from-emerald-500 to-emerald-600',
+      iconBg: 'bg-emerald-50',
+      iconColor: 'text-emerald-500',
+      gradient: 'from-emerald-50 to-emerald-100'
+    },
+    {
+      id: 'change',
+      title: getText('Weight Change', 'Changement', 'التغير'),
+      value: weightChange ? `${Math.abs(weightChange)} kg` : '—',
+      sub: getText('Total change', 'Changement total', 'التغير الكلي'),
+      icon: TrendingUp,
+      bgGradient: isWeightDown ? 'from-green-500 to-green-600' : 'from-orange-500 to-orange-600',
+      iconBg: isWeightDown ? 'bg-green-50' : 'bg-orange-50',
+      iconColor: isWeightDown ? 'text-green-500' : 'text-orange-500',
+      trend: weightChange ? (isWeightDown ? 'down' : 'up') : null,
+      gradient: isWeightDown ? 'from-green-50 to-green-100' : 'from-orange-50 to-orange-100'
+    },
+    {
+      id: 'status',
+      title: getText('Status', 'Statut', 'الحالة'),
+      value: currentDietPlan && !isExpired ? getText('Active', 'Actif', 'نشط') : getText('Inactive', 'Inactif', 'غير نشط'),
+      sub: getText('Diet Plan', 'Plan alimentaire', 'الخطة الغذائية'),
+      icon: Apple,
+      bgGradient: currentDietPlan && !isExpired ? 'from-amber-500 to-amber-600' : 'from-gray-400 to-gray-500',
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-500',
+      gradient: 'from-amber-50 to-amber-100'
+    }
+  ]
+
   return (
-    <>
-      <div className="space-y-6">
-        {/* Welcome Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-              {t('dashboard.welcome')}, {user?.name?.split(' ')[0] || 'Athlete'}! 👋
-            </h1>
-            <p className="text-gray-500 text-sm mt-1">{t('dashboard.overview')}</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-full">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-xs text-green-600 font-medium">{t('dashboard.allSystemsActive')}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">{t('dashboard.workouts')}</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{workouts?.length || 0}</p>
-                <p className="text-xs text-gray-400 mt-1">{t('dashboard.upcoming')}</p>
+    <div className="space-y-8">
+      {/* Hero Section with Gradient */}
+      <div className="relative overflow-hidden bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-3xl shadow-xl">
+        <div className="absolute inset-0 bg-black/10"></div>
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-32 -mt-32"></div>
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/5 rounded-full -ml-24 -mb-24"></div>
+        
+        <div className="relative px-6 py-8 md:px-8 md:py-10">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Sparkles className="h-5 w-5 text-yellow-300" />
+                <span className="text-yellow-200 text-sm font-medium uppercase tracking-wide">
+                  {getText('Welcome Back', 'Bon Retour', 'مرحباً بعودتك')}
+                </span>
               </div>
-              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center">
-                <Calendar className="h-5 w-5 text-blue-500" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">{t('dashboard.currentWeight')}</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{latestWeight || '—'}</p>
-                <p className="text-xs text-gray-400 mt-1">kg</p>
-              </div>
-              <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
-                <Target className="h-5 w-5 text-emerald-500" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">{t('dashboard.weightChange')}</p>
-                <div className="flex items-center gap-1 mt-1">
-                  {weightChange && (
-                    isWeightDown ? (
-                      <ArrowDown className="h-4 w-4 text-green-500" />
-                    ) : (
-                      <ArrowUp className="h-4 w-4 text-orange-500" />
-                    )
-                  )}
-                  <p className={`text-2xl font-bold ${isWeightDown ? 'text-green-600' : weightChange ? 'text-orange-600' : 'text-gray-900'}`}>
-                    {weightChange ? `${Math.abs(weightChange)} kg` : '—'}
-                  </p>
-                </div>
-                <p className="text-xs text-gray-400 mt-1">{t('dashboard.totalChange')}</p>
-              </div>
-              <div className="w-10 h-10 bg-purple-50 rounded-xl flex items-center justify-center">
-                <TrendingUp className="h-5 w-5 text-purple-500" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500">{t('dashboard.status')}</p>
-                <p className="text-2xl font-bold text-gray-900 mt-1">{currentDietPlan && !isExpired ? t('dashboard.active') : t('dashboard.inactive')}</p>
-                <p className="text-xs text-gray-400 mt-1">{t('dashboard.dietPlan')}</p>
-              </div>
-              <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center">
-                <Apple className="h-5 w-5 text-amber-500" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Weight Chart */}
-          <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-semibold text-gray-900">{t('dashboard.weightProgress')}</h3>
-                <p className="text-xs text-gray-400 mt-0.5">{t('dashboard.last7days')}</p>
-              </div>
-              <div className="flex items-center gap-1 text-xs text-gray-400">
-                <Flame className="h-3 w-3 text-orange-500" />
-                <span>{weightHistory?.length || 0} {t('dashboard.records')}</span>
-              </div>
-            </div>
-            {weightHistory?.length > 1 ? (
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={formatWeightData(weightHistory)}>
-                    <defs>
-                      <linearGradient id="weightGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} />
-                    <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} width={30} />
-                    <Tooltip 
-                      contentStyle={{ fontSize: '12px', borderRadius: '10px', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
-                      formatter={(value) => [`${value} kg`, t('dashboard.weight')]}
-                    />
-                    <Area type="monotone" dataKey="weight" stroke="#3b82f6" strokeWidth={2} fill="url(#weightGradient)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            ) : (
-              <div className="h-56 flex items-center justify-center text-gray-400">
-                <div className="text-center">
-                  <Activity className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                  <p className="text-sm">{t('dashboard.noWeightData')}</p>
-                  <p className="text-xs mt-1">{t('dashboard.addFirstWeight')}</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Upcoming Workouts */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-gray-900">{t('dashboard.upcoming')}</h3>
-              <Zap className="h-4 w-4 text-blue-500" />
-            </div>
-            {workouts?.length > 0 ? (
-              <div className="space-y-3">
-                {workouts.slice(0, 3).map((workout) => (
-                  <div key={workout._id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition cursor-pointer">
-                    <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <Activity className="h-4 w-4 text-blue-600" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900 text-sm">{workout.title}</p>
-                      <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
-                        <Clock className="h-3 w-3" />
-                        {format(new Date(workout.scheduledDate), 'MMM dd')}
-                        {workout.duration && <span>• {workout.duration} {t('dashboard.min')}</span>}
-                      </div>
-                    </div>
-                    <div className={`text-xs px-2 py-1 rounded-full ${
-                      workout.difficulty === 'beginner' ? 'bg-green-100 text-green-700' :
-                      workout.difficulty === 'intermediate' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
-                    }`}>
-                      {workout.difficulty === 'beginner' ? t('workouts.beginner') : 
-                       workout.difficulty === 'intermediate' ? t('workouts.intermediate') : t('workouts.advanced')}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Calendar className="h-8 w-8 mx-auto text-gray-300 mb-2" />
-                <p className="text-sm text-gray-500">{t('dashboard.noWorkouts')}</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Second Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Diet Plan Card */}
-          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-5 shadow-sm border border-blue-100">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Apple className="h-5 w-5 text-blue-600" />
-                <h3 className="font-semibold text-gray-900">{t('dashboard.todaysPlan')}</h3>
-              </div>
-              {hasMultiplePlans && (
-                <span className="text-xs text-blue-600 bg-white/50 px-2 py-0.5 rounded-full">{dietPlansCount} {t('dashboard.plans')}</span>
-              )}
-            </div>
-            {currentDietPlan && !isExpired ? (
-              <div>
-                <p className="text-lg font-bold text-gray-900">{currentDietPlan.title}</p>
-                <p className="text-sm text-gray-600 mt-1">
-                  {currentDietPlan.targetCalories || 'Custom'} {t('dashboard.calories')}
-                </p>
-                {isExpiringSoon && (
-                  <div className="mt-3 flex items-center gap-2 text-xs text-orange-600 bg-orange-50 px-2 py-1 rounded-lg">
-                    <Clock className="h-3 w-3" />
-                    {t('dashboard.expiresIn')} {hoursLeft} {t('dashboard.hours')}
-                  </div>
+              <h1 className="text-2xl md:text-4xl font-bold text-white">
+                {user?.name?.split(' ')[0] || 'Athlete'}
+              </h1>
+              <p className="text-blue-100 text-sm md:text-base mt-1 max-w-md">
+                {getText(
+                  "Track your progress and stay on top of your fitness goals",
+                  "Suivez vos progrès et restez au top de vos objectifs fitness",
+                  "تتبع تقدمك وابق على اطلاع بأهدافك اللياقية"
                 )}
-                <button 
-                  onClick={() => navigate('/diet-plan')}
-                  className="mt-4 text-sm text-blue-600 font-medium flex items-center gap-1 hover:gap-2 transition-all"
-                >
-                  {t('dashboard.viewDetails')} <ChevronRight className="h-3 w-3" />
-                </button>
-              </div>
-            ) : (
-              <div className="text-center py-4">
-                <p className="text-gray-500 text-sm">{t('dashboard.noDietPlan')}</p>
-                <p className="text-xs text-gray-400 mt-1">{t('dashboard.coachWillAssign')}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Coach Card */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Trophy className="h-5 w-5 text-amber-500" />
-                <h3 className="font-semibold text-gray-900">{t('dashboard.yourCoach')}</h3>
-              </div>
-              <Heart className="h-4 w-4 text-red-400" />
+              </p>
             </div>
-            {coach ? (
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <div className="w-14 h-14 rounded-full overflow-hidden bg-gradient-to-r from-blue-400 to-blue-600">
-                    {coach.profilePicture ? (
-                      <img src={coach.profilePicture} alt={coach.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <User className="h-6 w-6 text-white" />
-                      </div>
-                    )}
-                  </div>
-                  <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-gray-900">{coach.name}</p>
-                  <p className="text-xs text-gray-500">{coach.email}</p>
-                  <div className="flex gap-2 mt-2">
-                    <button 
-                      onClick={() => navigate('/my-coach')}
-                      className="text-xs text-blue-600 font-medium"
-                    >
-                      {t('dashboard.profile')}
-                    </button>
-                    <button 
-                      onClick={() => navigate(`/messages?userId=${coach._id}`)}
-                      className="text-xs text-gray-500 hover:text-blue-600"
-                    >
-                      {t('dashboard.message')}
-                    </button>
-                  </div>
+            <div className="flex items-center gap-3">
+              <div className="bg-white/10 backdrop-blur-sm rounded-full px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <Battery className="h-4 w-4 text-green-400" />
+                  <span className="text-white text-sm font-medium">Fitness Score: {fitnessScore}</span>
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-4">
-                <p className="text-gray-500 text-sm">{t('dashboard.noCoach')}</p>
+              <div className="bg-white/10 backdrop-blur-sm rounded-full px-4 py-2">
+                <div className="flex items-center gap-2">
+                  <Medal className="h-4 w-4 text-yellow-400" />
+                  <span className="text-white text-sm font-medium">Level {Math.floor(fitnessScore / 10)}</span>
+                </div>
               </div>
-            )}
+            </div>
           </div>
 
-          {/* Quick Stats */}
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-            <div className="flex items-center gap-2 mb-3">
-              <Star className="h-5 w-5 text-yellow-500" />
-              <h3 className="font-semibold text-gray-900">{t('dashboard.quickStats')}</h3>
+          {/* Stats Preview */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center">
+              <p className="text-xs text-blue-200">{getText('Workouts', 'Entraînements', 'التمارين')}</p>
+              <p className="text-2xl font-bold text-white">{workouts?.length || 0}</p>
             </div>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                <span className="text-sm text-gray-600">{t('dashboard.totalWorkouts')}</span>
-                <span className="font-semibold text-gray-900">{workouts?.length || 0}</span>
-              </div>
-              <div className="flex justify-between items-center py-2 border-b border-gray-100">
-                <span className="text-sm text-gray-600">{t('dashboard.totalDietPlans')}</span>
-                <span className="font-semibold text-gray-900">{dietPlansCount}</span>
-              </div>
-              <div className="flex justify-between items-center py-2">
-                <span className="text-sm text-gray-600">{t('dashboard.weightEntries')}</span>
-                <span className="font-semibold text-gray-900">{weightHistory?.length || 0}</span>
-              </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center">
+              <p className="text-xs text-blue-200">{getText('Weight', 'Poids', 'الوزن')}</p>
+              <p className="text-2xl font-bold text-white">{latestWeight || '—'} kg</p>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center">
+              <p className="text-xs text-blue-200">{getText('BMI', 'IMC', 'مؤشر كتلة الجسم')}</p>
+              <p className="text-2xl font-bold text-white">{bmi || '—'}</p>
+            </div>
+            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-3 text-center">
+              <p className="text-xs text-blue-200">{getText('Streak', 'Série', 'سلسلة')}</p>
+              <p className="text-2xl font-bold text-white">{weightHistory?.length || 0} d</p>
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Recent Activity */}
-        {weightHistory?.length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100">
-              <h3 className="font-semibold text-gray-900">{t('dashboard.recentActivity')}</h3>
-            </div>
-            <div className="divide-y divide-gray-50">
-              {[...weightHistory].reverse().slice(0, 4).map((entry, idx) => (
-                <div key={idx} className="px-5 py-3 flex items-center justify-between hover:bg-gray-50 transition">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                      <Activity className="h-3 w-3 text-gray-500" />
-                    </div>
-                    <span className="text-sm text-gray-600">{t('dashboard.weightRecorded')}</span>
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {stats.map((stat) => {
+          const Icon = stat.icon
+          return (
+            <div
+              key={stat.id}
+              onMouseEnter={() => setHoveredStat(stat.id)}
+              onMouseLeave={() => setHoveredStat(null)}
+              className="group relative overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1"
+            >
+              <div className={`absolute inset-0 bg-gradient-to-r ${stat.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} />
+              <div className="relative p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <div className={`w-12 h-12 ${stat.iconBg} rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300`}>
+                    <Icon className={`h-6 w-6 ${stat.iconColor}`} />
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="font-medium text-gray-900">{entry.weight} kg</span>
-                    <span className="text-xs text-gray-400">{format(new Date(entry.date), 'MMM dd')}</span>
+                  {stat.trend && (
+                    <div className={`flex items-center gap-1 px-2 py-1 rounded-full ${stat.trend === 'down' ? 'bg-green-100' : 'bg-orange-100'}`}>
+                      {stat.trend === 'down' ? (
+                        <ArrowDown className="h-3 w-3 text-green-600" />
+                      ) : (
+                        <ArrowUp className="h-3 w-3 text-orange-600" />
+                      )}
+                      <span className={`text-xs font-medium ${stat.trend === 'down' ? 'text-green-600' : 'text-orange-600'}`}>
+                        {Math.abs(weightChange)} kg
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">{stat.title}</p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
+                  <p className="text-xs text-gray-400 mt-1">{stat.sub}</p>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Weight Chart */}
+        <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300">
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h3 className="font-semibold text-gray-900 text-lg">
+                {getText('Weight Progress', 'Progression du poids', 'تقدم الوزن')}
+              </h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {getText('Last 7 days tracking', 'Suivi des 7 derniers jours', 'تتبع آخر 7 أيام')}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-full">
+              <Flame className="h-3 w-3 text-orange-500" />
+              <span className="text-xs text-gray-500 font-medium">
+                {weightHistory?.length || 0} {getText('records', 'enregistrements', 'سجلات')}
+              </span>
+            </div>
+          </div>
+          {weightHistory?.length > 1 ? (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={formatWeightData(weightHistory)}>
+                  <defs>
+                    <linearGradient id="weightGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} />
+                  <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} width={35} />
+                  <Tooltip 
+                    contentStyle={{ fontSize: '12px', borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    formatter={(value) => [`${value} kg`, getText('Weight', 'Poids', 'الوزن')]}
+                  />
+                  <Area type="monotone" dataKey="weight" stroke="#3b82f6" strokeWidth={3} fill="url(#weightGradient)" activeDot={{ r: 6 }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-64 flex items-center justify-center">
+              <div className="text-center">
+                <Activity className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+                <p className="text-gray-400 text-sm">{getText('No weight data yet', 'Pas encore de données', 'لا توجد بيانات وزن بعد')}</p>
+                <p className="text-xs text-gray-300 mt-1">{getText('Add your first weight entry', 'Ajoutez votre premier poids', 'أضف أول قياس وزن')}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Upcoming Workouts */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300">
+          <div className="flex items-center justify-between mb-5">
+            <div>
+              <h3 className="font-semibold text-gray-900 text-lg">
+                {getText('Upcoming', 'À venir', 'القادمة')}
+              </h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {getText('Next workouts', 'Prochains entraînements', 'التمارين القادمة')}
+              </p>
+            </div>
+            <Zap className="h-5 w-5 text-blue-500" />
+          </div>
+          {workouts?.length > 0 ? (
+            <div className="space-y-3">
+              {workouts.slice(0, 3).map((workout, idx) => (
+                <div 
+                  key={workout._id} 
+                  onClick={() => navigate(`/workouts`)}
+                  className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-all cursor-pointer group"
+                >
+                  <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-500 rounded-lg flex items-center justify-center shadow-sm group-hover:scale-105 transition">
+                    <Dumbbell className="h-4 w-4 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-gray-900 text-sm">{workout.title}</p>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                      <Clock className="h-3 w-3" />
+                      {format(new Date(workout.scheduledDate), 'MMM dd')}
+                      {workout.duration && <span>• {workout.duration} min</span>}
+                    </div>
+                  </div>
+                  <div className={`text-xs px-2 py-1 rounded-full font-medium ${
+                    workout.difficulty === 'beginner' ? 'bg-green-100 text-green-700' :
+                    workout.difficulty === 'intermediate' ? 'bg-yellow-100 text-yellow-700' : 'bg-red-100 text-red-700'
+                  }`}>
+                    {workout.difficulty === 'beginner' ? getText('Beginner', 'Débutant', 'مبتدئ') : 
+                     workout.difficulty === 'intermediate' ? getText('Intermediate', 'Intermédiaire', 'متوسط') : getText('Advanced', 'Avancé', 'متقدم')}
                   </div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="text-center py-8">
+              <Calendar className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+              <p className="text-gray-400 text-sm">{getText('No workouts scheduled', 'Aucun entraînement planifié', 'لا توجد تمارين مجدولة')}</p>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Second Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Diet Plan Card */}
+        <div className="bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 rounded-2xl p-6 shadow-sm border border-blue-100 hover:shadow-lg transition-all duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm">
+                <Apple className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">{getText("Today's Plan", 'Plan du jour', 'خطة اليوم')}</h3>
+                <p className="text-xs text-gray-500">{getText('Nutrition guide', 'Guide nutritionnel', 'دليل التغذية')}</p>
+              </div>
+            </div>
+            {hasMultiplePlans && (
+              <span className="px-2 py-1 bg-white/60 rounded-full text-xs font-medium text-blue-600 shadow-sm">
+                {dietPlansCount} {getText('plans', 'plans', 'خطط')}
+              </span>
+            )}
+          </div>
+          {currentDietPlan && !isExpired ? (
+            <div>
+              <p className="text-xl font-bold text-gray-900">{currentDietPlan.title}</p>
+              <p className="text-sm text-gray-600 mt-1">
+                {currentDietPlan.targetCalories || 'Custom'} {getText('calories', 'calories', 'سعرات')}
+              </p>
+              {isExpiringSoon && (
+                <div className="mt-4 flex items-center gap-2 text-xs text-orange-600 bg-orange-50/80 px-3 py-2 rounded-lg">
+                  <Clock className="h-3 w-3" />
+                  <span>{getText('Expires in', 'Expire dans', 'تنتهي خلال')} {hoursLeft} {getText('hours', 'heures', 'ساعات')}</span>
+                </div>
+              )}
+              <button 
+                onClick={() => navigate('/diet-plan')}
+                className="mt-5 text-sm text-blue-600 font-medium flex items-center gap-1 hover:gap-2 transition-all group"
+              >
+                {getText('View Details', 'Voir détails', 'عرض التفاصيل')}
+                <ChevronRight className="h-3 w-3 group-hover:translate-x-1 transition" />
+              </button>
+            </div>
+          ) : (
+            <div className="text-center py-4">
+              <Apple className="h-10 w-10 mx-auto text-gray-300 mb-2" />
+              <p className="text-gray-500 text-sm">{getText('No active diet plan', 'Aucun plan actif', 'لا توجد خطة نشطة')}</p>
+              <p className="text-xs text-gray-400 mt-1">{getText('Your coach will assign one', 'Votre coach vous en assignera', 'سيقوم مدربك بتعيين واحدة')}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Coach Card */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 bg-amber-50 rounded-xl flex items-center justify-center">
+                <Trophy className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900">{getText('Your Coach', 'Votre Coach', 'مدربك')}</h3>
+                <p className="text-xs text-gray-500">{getText('Personal guidance', 'Guide personnel', 'توجيه شخصي')}</p>
+              </div>
+            </div>
+            <Heart className="h-5 w-5 text-red-400" />
+          </div>
+          {coach ? (
+            <div className="flex items-center gap-4 cursor-pointer" onClick={handleCoachClick}>
+              <div className="relative">
+                <div className="w-16 h-16 rounded-full overflow-hidden bg-gradient-to-r from-blue-400 to-blue-600 ring-4 ring-white shadow-lg">
+                  {coach.profilePicture ? (
+                    <img src={coach.profilePicture} alt={coach.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <User className="h-7 w-7 text-white" />
+                    </div>
+                  )}
+                </div>
+                <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white"></div>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-gray-900 text-lg">{coach.name}</p>
+                <p className="text-xs text-gray-500">{coach.email}</p>
+                <div className="flex gap-3 mt-2">
+                  <button 
+                    onClick={() => navigate('/my-coach')}
+                    className="text-xs text-blue-600 font-medium hover:underline"
+                  >
+                    {getText('Profile', 'Profil', 'الملف الشخصي')}
+                  </button>
+                  <button 
+                    onClick={() => navigate(`/messages?userId=${coach._id}`)}
+                    className="text-xs text-gray-500 hover:text-blue-600 transition"
+                  >
+                    {getText('Message', 'Message', 'رسالة')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-6">
+              <User className="h-12 w-12 mx-auto text-gray-300 mb-2" />
+              <p className="text-gray-500 text-sm">{getText('No coach assigned', 'Aucun coach assigné', 'لا يوجد مدرب معين')}</p>
+              <p className="text-xs text-gray-400 mt-1">{getText('Coming soon', 'Bientôt disponible', 'قريباً')}</p>
+            </div>
+          )}
+        </div>
+
+        {/* Quick Stats & BMI */}
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-lg transition-all duration-300">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-10 h-10 bg-yellow-50 rounded-xl flex items-center justify-center">
+              <Star className="h-5 w-5 text-yellow-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-900">{getText('Quick Stats', 'Stats rapides', 'إحصائيات سريعة')}</h3>
+              <p className="text-xs text-gray-500">{getText('At a glance', 'En un coup d\'œil', 'لمحة سريعة')}</p>
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <span className="text-sm text-gray-600">{getText('Total Workouts', 'Total entraînements', 'إجمالي التمارين')}</span>
+              <span className="font-semibold text-gray-900">{workouts?.length || 0}</span>
+            </div>
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <span className="text-sm text-gray-600">{getText('Diet Plans', 'Plans alimentaires', 'الخطط الغذائية')}</span>
+              <span className="font-semibold text-gray-900">{dietPlansCount}</span>
+            </div>
+            <div className="flex justify-between items-center py-2 border-b border-gray-100">
+              <span className="text-sm text-gray-600">{getText('Weight Entries', 'Entrées de poids', 'إدخالات الوزن')}</span>
+              <span className="font-semibold text-gray-900">{weightHistory?.length || 0}</span>
+            </div>
+            {bmi && (
+              <div className="flex justify-between items-center py-2">
+                <span className="text-sm text-gray-600">{getText('BMI', 'IMC', 'مؤشر كتلة الجسم')}</span>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-gray-900">{bmi}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full bg-${bmiCategory?.color}-100 text-${bmiCategory?.color}-700`}>
+                    {bmiCategory?.text}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      {weightHistory?.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300">
+          <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+            <div className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-blue-500" />
+              <h3 className="font-semibold text-gray-900">{getText('Recent Activity', 'Activité récente', 'النشاط الأخير')}</h3>
+            </div>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {[...weightHistory].reverse().slice(0, 5).map((entry, idx) => {
+              const prevEntry = weightHistory[weightHistory.length - 1 - (idx + 1)]
+              const change = prevEntry ? (entry.weight - prevEntry.weight).toFixed(1) : null
+              return (
+                <div key={idx} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition-all group">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center group-hover:bg-blue-50 transition">
+                      <Activity className="h-4 w-4 text-gray-500 group-hover:text-blue-500 transition" />
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-700">{getText('Weight recorded', 'Poids enregistré', 'تم تسجيل الوزن')}</span>
+                      <p className="text-xs text-gray-400">{format(new Date(entry.date), 'EEEE, MMMM dd, yyyy')}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="font-bold text-gray-900 text-lg">{entry.weight} kg</span>
+                    {change && (
+                      <span className={`text-sm font-medium flex items-center gap-1 ${parseFloat(change) >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+                        {parseFloat(change) >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                        {Math.abs(parseFloat(change))} kg
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <ProfilePictureModal
         isOpen={showProfileModal}
@@ -450,7 +615,7 @@ const Dashboard = () => {
         imageUrl={selectedCoach?.profilePicture}
         name={selectedCoach?.name}
       />
-    </>
+    </div>
   )
 }
 

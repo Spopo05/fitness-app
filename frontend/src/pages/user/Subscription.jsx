@@ -8,32 +8,32 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
-import { useNavigate } from 'react-router-dom'
 import api from '../../services/api'
 import LoadingSpinner from '../../components/LoadingSpinner'
 
 const Subscription = () => {
   const { t, i18n } = useTranslation()
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [selectedDuration, setSelectedDuration] = useState('yearly')
+  const [selectedPlan, setSelectedPlan] = useState('pro')
+  const [selectedDuration, setSelectedDuration] = useState('monthly')
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('card')
   const [isProcessing, setIsProcessing] = useState(false)
 
   const isRTL = i18n.language === 'ar'
   const isFrench = i18n.language === 'fr'
 
-  // Get text based on language
   const getText = (en, fr, ar) => {
     if (isFrench) return fr
     if (isRTL) return ar
     return en
   }
 
+  // Fetch current subscription
   const { data: currentSubscription, isLoading: subscriptionLoading, refetch } = useQuery({
     queryKey: ['currentSubscription'],
     queryFn: async () => {
       try {
-        const response = await api.get('/subscriptions/my-subscription')
+        const response = await api.get('/subscriptions/current')
         return response.data.data.subscription
       } catch (error) {
         if (error.response?.status === 404) return null
@@ -43,19 +43,29 @@ const Subscription = () => {
     retry: false,
   })
 
+  // Fetch plans
+  const { data: plansData } = useQuery({
+    queryKey: ['subscriptionPlans'],
+    queryFn: async () => {
+      const response = await api.get('/subscriptions/plans')
+      return response.data.data
+    },
+  })
+
+  // Create subscription mutation
   const createSubscriptionMutation = useMutation({
     mutationFn: async (data) => {
-      const response = await api.post('/subscriptions/create-checkout-session', data)
+      const response = await api.post('/subscriptions/create', data)
       return response.data
     },
-    onSuccess: (data) => {
-      toast.success(data.message || getText('Subscription activated!', 'Abonnement activé !', 'تم تفعيل الاشتراك!'))
+    onSuccess: () => {
+      toast.success(getText('Subscription activated!', 'Abonnement activé !', 'تم تفعيل الاشتراك!'))
       queryClient.invalidateQueries(['currentSubscription'])
       setIsProcessing(false)
-      setTimeout(() => navigate('/dashboard'), 2000)
+      refetch()
     },
-    onError: () => {
-      toast.error(getText('Failed to activate', 'Échec de l\'activation', 'فشل التفعيل'))
+    onError: (error) => {
+      toast.error(error.response?.data?.message || getText('Failed to activate', 'Échec de l\'activation', 'فشل التفعيل'))
       setIsProcessing(false)
     }
   })
@@ -75,8 +85,9 @@ const Subscription = () => {
   const handleSubscribe = () => {
     setIsProcessing(true)
     createSubscriptionMutation.mutate({
-      plan: 'premium',
+      planId: selectedPlan,
       duration: selectedDuration,
+      paymentMethod: selectedPaymentMethod,
     })
   }
 
@@ -87,13 +98,16 @@ const Subscription = () => {
     maximumFractionDigits: 0
   }).format(price)
 
+  const plans = plansData?.plans || []
+  const selectedPlanData = plans.find(p => p.id === selectedPlan)
+
   if (subscriptionLoading) return (
     <div className="flex items-center justify-center h-64">
       <LoadingSpinner size="lg" />
     </div>
   )
 
-  if (currentSubscription) return (
+  if (currentSubscription && currentSubscription.isActive) return (
     <div className="max-w-md mx-auto py-12">
       <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-6 text-center">
@@ -101,57 +115,37 @@ const Subscription = () => {
             <Crown className="h-8 w-8 text-white" />
           </div>
           <h2 className="text-xl font-bold text-white mb-1">{getText('Active Subscription!', 'Abonnement Actif !', 'اشتراك نشط!')} 🎉</h2>
-          <p className="text-blue-100 text-xs">{getText('You\'re enjoying all Premium benefits', 'Vous profitez de tous les avantages Premium', 'أنت تستمتع بجميع مزايا بريميوم')}</p>
+          <p className="text-blue-100 text-xs">{getText(`You're enjoying all ${currentSubscription.plan} benefits`, `Vous profitez de tous les avantages ${currentSubscription.plan}`, `أنت تستمتع بجميع مزايا ${currentSubscription.plan}`)}</p>
         </div>
         <div className="p-5">
           <div className="bg-gray-50 rounded-xl p-3 mb-4">
             <div className="flex justify-between py-1.5">
               <span className="text-gray-500 text-xs">{getText('Plan', 'Forfait', 'الباقة')}</span>
-              <span className="font-semibold text-blue-600 text-xs capitalize">Premium</span>
+              <span className="font-semibold text-blue-600 text-xs capitalize">{currentSubscription.plan}</span>
             </div>
             <div className="flex justify-between py-1.5 border-t border-gray-200">
               <span className="text-gray-500 text-xs">{getText('Price', 'Prix', 'السعر')}</span>
               <span className="font-semibold text-gray-900 text-xs">{formatPrice(currentSubscription.price)}</span>
             </div>
             <div className="flex justify-between py-1.5 border-t border-gray-200">
-              <span className="text-gray-500 text-xs">{getText('Renews on', 'Renouvelle le', 'يتجدد في')}</span>
+              <span className="text-gray-500 text-xs">{getText('Expires on', 'Expire le', 'ينتهي في')}</span>
               <span className="text-gray-700 text-xs">{format(new Date(currentSubscription.endDate), 'dd MMM yyyy')}</span>
+            </div>
+            <div className="flex justify-between py-1.5 border-t border-gray-200">
+              <span className="text-gray-500 text-xs">{getText('Days remaining', 'Jours restants', 'الأيام المتبقية')}</span>
+              <span className="text-gray-700 text-xs">{currentSubscription.daysRemaining} days</span>
             </div>
           </div>
           <button onClick={() => cancelMutation.mutate()} className="w-full py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition text-xs font-medium">
-            {getText('Cancel Subscription', 'Annuler l\'abonnement', 'إلغاء الاشتراك')}
+            {getText('Cancel Subscription', 'Annuler l\'abonnement', 'إلغاء الkshtirak')}
           </button>
         </div>
       </div>
     </div>
   )
 
-  const monthlyPrice = 199
-  const quarterlyPrice = 549
-  const yearlyPrice = 2249
-  const yearlySavings = (monthlyPrice * 12) - yearlyPrice
-  const quarterlySavings = (monthlyPrice * 3) - quarterlyPrice
-
-  // Features with direct text based on language
-  const mainFeatures = [
-    { icon: Dumbbell, text: getText('Complete access to workout programs', 'Accès complet aux programmes d\'entraînement', 'وصول كامل إلى برامج التمرين') },
-    { icon: Apple, text: getText('Personalized meal plans', 'Plans alimentaires personnalisés', 'خطط غذائية مخصصة') },
-    { icon: MessageCircle, text: getText('Direct messaging with coach', 'Messagerie directe avec coach', 'مراسلة مباشرة مع المدرب') },
-    { icon: Target, text: getText('Personalized goals', 'Objectifs personnalisés', 'أهداف مخصصة') },
-    { icon: Activity, text: getText('Advanced progress tracking', 'Suivi avancé de progression', 'تتبع متقدم للتقدم') },
-    { icon: Headphones, text: getText('Priority support', 'Support prioritaire', 'دعم') },
-    { icon: BarChart3, text: getText('Detailed progress reports', 'Rapports de progression détaillés', 'تقارير تقدم مفصلة') }
-  ]
-
-  const allFeatures = [
-    getText('Complete access to workout programs', 'Accès complet aux programmes d\'entraînement', 'وصول كامل إلى برامج التمرين'),
-    getText('Personalized meal plans', 'Plans alimentaires personnalisés', 'خطط غذائية مخصصة'),
-    getText('Direct messaging with coach', 'Messagerie directe avec coach', 'مراسلة مباشرة مع المدرب'),
-    getText('Personalized goals', 'Objectifs personnalisés', 'أهداف مخصصة'),
-    getText('Advanced progress tracking', 'Suivi avancé de progression', 'تتبع متقدم للتقدم'),
-    getText('Priority support', 'Support prioritaire', 'دعم'),
-    getText('Detailed progress reports', 'Rapports de progression détaillés', 'تقارير تقدم مفصلة')
-  ]
+  const currentPrice = selectedPlanData?.prices?.[selectedDuration]?.amount || 0
+  const savings = selectedPlanData?.prices?.[selectedDuration]?.savings || 0
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6">
@@ -161,89 +155,120 @@ const Subscription = () => {
           <Crown className="h-7 w-7 text-white" />
         </div>
         <h1 className="text-2xl font-bold mb-1">{getText('Premium Membership', 'Abonnement Premium', 'عضوية بريميوم')}</h1>
-        <p className="text-gray-500 text-sm">{getText('Unlock your full potential', 'Libérez votre potentiel', 'أطلق العنان لإمكانياتك')}</p>
+        <p className="text-gray-500 text-sm">{getText('Choose your plan', 'Choisissez votre forfait', 'اختر باقتك')}</p>
+      </div>
+
+      {/* Plan Selection */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        {plans.map((plan) => (
+          <button
+            key={plan.id}
+            onClick={() => setSelectedPlan(plan.id)}
+            className={`p-3 rounded-xl border-2 transition-all ${
+              selectedPlan === plan.id 
+                ? 'border-blue-500 bg-blue-50' 
+                : 'border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <div className="text-center">
+              <div className={`text-lg font-bold ${selectedPlan === plan.id ? 'text-blue-600' : 'text-gray-900'}`}>
+                {plan.name}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {formatPrice(plan.prices.monthly.amount)}/mo
+              </div>
+              {plan.popular && (
+                <div className="text-[10px] text-green-600 mt-1">Popular</div>
+              )}
+            </div>
+          </button>
+        ))}
       </div>
 
       {/* Duration Toggle */}
       <div className="flex justify-center mb-6">
         <div className="bg-gray-100 p-1 rounded-xl inline-flex gap-1">
-          <button
-            onClick={() => setSelectedDuration('monthly')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-medium transition ${selectedDuration === 'monthly' ? 'bg-white text-gray-900 shadow' : 'text-gray-500'}`}
-          >
-            {getText('Monthly', 'Mensuel', 'شهري')} {formatPrice(monthlyPrice)}
-          </button>
-          <button
-            onClick={() => setSelectedDuration('quarterly')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-medium transition ${selectedDuration === 'quarterly' ? 'bg-white text-gray-900 shadow' : 'text-gray-500'}`}
-          >
-            {getText('Quarterly', 'Trimestriel', 'ربع سنوي')} {formatPrice(quarterlyPrice)}
-            <span className="ml-1 text-green-600 text-[10px]">-{Math.round((quarterlySavings / (monthlyPrice * 3)) * 100)}%</span>
-          </button>
-          <button
-            onClick={() => setSelectedDuration('yearly')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-medium transition ${selectedDuration === 'yearly' ? 'bg-white text-gray-900 shadow' : 'text-gray-500'}`}
-          >
-            {getText('Yearly', 'Annuel', 'سنوي')} {formatPrice(yearlyPrice)}
-            <span className="ml-1 text-green-600 text-[10px]">-{Math.round((yearlySavings / (monthlyPrice * 12)) * 100)}%</span>
-            <span className="ml-1 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">{getText('Best Value', 'Meilleure offre', 'أفضل قيمة')}</span>
-          </button>
+          {['monthly', 'quarterly', 'yearly'].map((duration) => (
+            <button
+              key={duration}
+              onClick={() => setSelectedDuration(duration)}
+              className={`px-4 py-1.5 rounded-lg text-xs font-medium transition ${
+                selectedDuration === duration ? 'bg-white text-gray-900 shadow' : 'text-gray-500'
+              }`}
+            >
+              {getText(duration, duration === 'monthly' ? 'Mensuel' : duration === 'quarterly' ? 'Trimestriel' : 'Annuel', 
+                duration === 'monthly' ? 'شهري' : duration === 'quarterly' ? 'ربع سنوي' : 'سنوي')}
+              {selectedPlanData?.prices?.[duration]?.savings > 0 && (
+                <span className="ml-1 text-green-600 text-[10px]">-{selectedPlanData.prices[duration].savings}%</span>
+              )}
+              {duration === 'yearly' && (
+                <span className="ml-1 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
+                  {getText('Best Value', 'Meilleure offre', 'أفضل قيمة')}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Payment Method */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          {getText('Payment Method', 'Mode de paiement', 'طريقة الدفع')}
+        </label>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          {[
+            { id: 'card', name: getText('Card', 'Carte', 'بطاقة') },
+            { id: 'cih', name: 'CIH Bank' },
+            { id: 'attijari', name: 'Attijari' },
+            { id: 'bmce', name: 'BMCE' },
+            { id: 'cash', name: getText('Cash', 'Espèces', 'نقدي') }
+          ].map((method) => (
+            <button
+              key={method.id}
+              onClick={() => setSelectedPaymentMethod(method.id)}
+              className={`p-2 rounded-lg border-2 text-center transition-all ${
+                selectedPaymentMethod === method.id
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-200 hover:border-gray-300 text-gray-600'
+              }`}
+            >
+              <div className="text-sm font-medium">{method.name}</div>
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Main Card */}
       <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        {/* Price Header */}
         <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-5 py-4 text-center">
-          <h2 className="text-base font-bold text-white mb-1">{getText('Premium Access', 'Accès Premium', 'وصول بريميوم')}</h2>
+          <h2 className="text-base font-bold text-white mb-1">{selectedPlanData?.name} {getText('Plan', 'Forfait', 'باقة')}</h2>
           <div className="flex items-center justify-center gap-1">
-            <span className="text-2xl font-bold text-white">
-              {selectedDuration === 'monthly' ? formatPrice(monthlyPrice) : selectedDuration === 'quarterly' ? formatPrice(quarterlyPrice) : formatPrice(yearlyPrice)}
-            </span>
+            <span className="text-2xl font-bold text-white">{formatPrice(currentPrice)}</span>
             <span className="text-blue-200 text-xs">
               /{selectedDuration === 'monthly' ? getText('month', 'mois', 'شهر') : selectedDuration === 'quarterly' ? getText('quarter', 'trimestre', 'ربع سنة') : getText('year', 'an', 'سنة')}
             </span>
           </div>
-          {selectedDuration === 'yearly' && (
-            <p className="text-xs text-blue-200 mt-1">{getText('Save', 'Économisez', 'وفر')} {formatPrice(yearlySavings)}</p>
+          {savings > 0 && (
+            <p className="text-xs text-blue-200 mt-1">{getText('Save', 'Économisez', 'وفر')} {savings}%</p>
           )}
         </div>
 
-        {/* Main Features */}
-        <div className="p-4 border-b border-gray-100">
+        {/* Features */}
+        <div className="p-4">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">{getText('Features included', 'Fonctionnalités incluses', 'الميزات المضمنة')}:</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {mainFeatures.map((feature, idx) => {
-              const Icon = feature.icon
-              return (
-                <div key={idx} className="flex items-center gap-2 p-1.5">
-                  <div className="w-6 h-6 flex items-center justify-center bg-blue-50 rounded-lg flex-shrink-0">
-                    <Icon className="h-3 w-3 text-blue-600" />
-                  </div>
-                  <span className="text-[11px] text-gray-700 leading-tight">{feature.text}</span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Everything Included */}
-        {/* <div className="p-4 border-b border-gray-100 bg-gray-50/30">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Star className="h-3.5 w-3.5 text-yellow-500" />
-            <h3 className="text-xs font-semibold text-gray-900">{getText('Everything included', 'Tout est inclus', 'كل شيء مشمول')}:</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-3 gap-y-1.5">
-            {allFeatures.map((feature, idx) => (
-              <div key={idx} className="flex items-center gap-1.5">
-                <Check className="h-2.5 w-2.5 text-green-500" />
-                <span className="text-[10px] text-gray-600">{feature}</span>
+            {selectedPlanData?.features?.map((feature, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <Check className="h-3.5 w-3.5 text-green-500" />
+                <span className="text-xs text-gray-600">{feature}</span>
               </div>
             ))}
           </div>
-        </div> */}
+        </div>
 
         {/* CTA */}
-        <div className="p-4">
+        <div className="p-4 border-t border-gray-100">
           <button
             onClick={handleSubscribe}
             disabled={isProcessing}
@@ -252,7 +277,7 @@ const Subscription = () => {
             {isProcessing ? <LoadingSpinner size="sm" /> : (
               <>
                 <CreditCard className="h-3.5 w-3.5 inline mr-1.5" />
-                {getText('Get Started', 'Commencer', 'ابدأ الآن')}
+                {getText('Subscribe Now', 'S\'abonner maintenant', 'اشترك الآن')}
               </>
             )}
           </button>
@@ -266,31 +291,7 @@ const Subscription = () => {
               <Clock className="h-3 w-3 text-orange-600" />
               <span className="text-[10px] text-gray-500">{getText('Cancel anytime', 'Annulation à tout moment', 'إلغاء في أي وقت')}</span>
             </div>
-            <div className="flex items-center gap-1">
-              <Award className="h-3 w-3 text-purple-600" />
-              <span className="text-[10px] text-gray-500">{getText('30-day guarantee', 'Garantie 30 jours', 'ضمان 30 يوماً')}</span>
-            </div>
           </div>
-        </div>
-      </div>
-
-      {/* Trust Badges */}
-      <div className="flex justify-center gap-6 mt-5">
-        <div className="text-center">
-          <Sparkles className="mx-auto h-4 w-4 text-blue-500 mb-1" />
-          <p className="text-[10px] text-gray-500">{getText('Personalized', 'Personnalisé', 'شخصي')}</p>
-        </div>
-        <div className="text-center">
-          <Shield className="mx-auto h-4 w-4 text-blue-500 mb-1" />
-          <p className="text-[10px] text-gray-500">{getText('Expert Coaches', 'Coach experts', 'مدربون خبراء')}</p>
-        </div>
-        <div className="text-center">
-          <TrendingUp className="mx-auto h-4 w-4 text-blue-500 mb-1" />
-          <p className="text-[10px] text-gray-500">{getText('Track Progress', 'Suivi progression', 'تتبع التقدم')}</p>
-        </div>
-        <div className="text-center">
-          <Zap className="mx-auto h-4 w-4 text-blue-500 mb-1" />
-          <p className="text-[10px] text-gray-500">{getText('Fast Results', 'Résultats rapides', 'نتائج سريعة')}</p>
         </div>
       </div>
     </div>

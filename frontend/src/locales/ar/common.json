@@ -72,17 +72,19 @@
   },
   "sidebar": {
     "dashboard": "لوحة التحكم",
-    "workouts": "التمارين",
-    "dietPlan": "الخطة الغذائية",
-    "messages": "الرسائل",
-    "subscription": "الاشتراك",
-    "profile": "الملف الشخصي",
-    "myClients": "عملائي",
     "users": "المستخدمين",
     "subscriptions": "الاشتراكات",
-    "analytics": "الإحصائيات",
+    "profile": "الملف الشخصي",
+    "myClients": "عملائي",
+    "messages": "الرسائل",
+    "aiAssistant": "المساعد الذكي",
+    "workouts": "التمارين",
+    "dietPlan": "الخطة الغذائية",
+    "subscription": "الاشتراك",
     "settings": "الإعدادات",
-   "logout": "تسجيل الخروج"
+    "logout": "تسجيل الخروج",
+    "expand": "توسيع",
+    "collapse": "طي"
   },
   "workouts": {
     "title": "التمارين",

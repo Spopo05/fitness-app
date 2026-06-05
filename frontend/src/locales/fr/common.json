@@ -70,17 +70,21 @@
     "totalChange": "Changement total",
     "min": "min"
   },
-  "sidebar": {
+   "sidebar": {
     "dashboard": "Tableau de bord",
-    "workouts": "Entraînements",
-    "dietPlan": "Plan alimentaire",
-    "messages": "Messages",
-    "subscription": "Abonnement",
-    "profile": "Profil",
-    "myClients": "Mes clients",
     "users": "Utilisateurs",
     "subscriptions": "Abonnements",
-    "analytics": "Analytiques"
+    "profile": "Profil",
+    "myClients": "Mes Clients",
+    "messages": "Messages",
+    "aiAssistant": "Assistant IA",
+    "workouts": "Entraînements",
+    "dietPlan": "Plan alimentaire",
+    "subscription": "Abonnement",
+    "settings": "Paramètres",
+    "logout": "Déconnexion",
+    "expand": "Développer",
+    "collapse": "Réduire"
   },
   "workouts": {
     "title": "Entraînements",

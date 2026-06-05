@@ -16,6 +16,8 @@ import Workouts from './pages/user/Workouts';
 import DietPlan from './pages/user/DietPlan';
 import Messages from './pages/user/UserMessages';
 import Subscription from './pages/user/Subscription';
+import AIAssistant from './pages/user/AIAssistant';
+import CoachProfileView from './pages/user/CoachProfileView';
 
 // Coach pages
 import CoachDashboard from './pages/coach/CoachDashboard';
@@ -108,6 +110,8 @@ function App() {
         <Route path="/diet-plan" element={<DietPlan />} />
         <Route path="/messages" element={<Messages />} />
         <Route path="/subscription" element={<Subscription />} />
+        <Route path="ai-assistant" element={<AIAssistant />} />
+        <Route path="/my-coach" element={<CoachProfileView />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
