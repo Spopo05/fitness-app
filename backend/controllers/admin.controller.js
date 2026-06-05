@@ -1,6 +1,7 @@
 const User = require('../models/user.model');
 const Subscription = require('../models/subscription.model');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
+const notificationController = require('./notification.controller');
 
 /**
  * Get all users
@@ -181,7 +182,7 @@ exports.assignCoach = asyncHandler(async (req, res) => {
     throw new AppError('User not found', 404);
   }
   
-  // Update user with coach
+  const oldCoach = user.coach;
   user.coach = coachId;
   await user.save();
   
@@ -189,6 +190,34 @@ exports.assignCoach = asyncHandler(async (req, res) => {
   const updatedUser = await User.findById(userId)
     .select('-password')
     .populate('coach', 'name email profilePicture');
+  
+  // SEND NOTIFICATION TO USER (Client)
+  await notificationController.createNotification(
+    userId,
+    'coach_assigned',
+    '👨‍🏫 Coach Assigned!',
+    `You have been assigned to ${coach.name} as your personal coach. They will guide you through your fitness journey.`,
+    {
+      coachId: coach._id,
+      coachName: coach.name,
+      coachEmail: coach.email
+    }
+  );
+  
+  // SEND NOTIFICATION TO COACH
+  if (oldCoach?.toString() !== coachId) {
+    await notificationController.createNotification(
+      coachId,
+      'coach_assigned',
+      '📋 New Client Assigned',
+      `${user.name} has been assigned to you as a new client.`,
+      {
+        clientId: user._id,
+        clientName: user.name,
+        clientEmail: user.email
+      }
+    );
+  }
   
   res.status(200).json({
     status: 'success',
@@ -206,12 +235,12 @@ exports.removeCoach = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   
   // Check if user exists
-  const user = await User.findById(userId);
+  const user = await User.findById(userId).populate('coach', 'name');
   if (!user) {
     throw new AppError('User not found', 404);
   }
   
-  // Remove coach reference
+  const coachName = user.coach?.name;
   user.coach = null;
   await user.save();
   
@@ -219,6 +248,17 @@ exports.removeCoach = asyncHandler(async (req, res) => {
   const updatedUser = await User.findById(userId)
     .select('-password')
     .populate('coach', 'name email profilePicture');
+  
+  // SEND NOTIFICATION FOR COACH REMOVAL
+  if (coachName) {
+    await notificationController.createNotification(
+      userId,
+      'coach_assigned',
+      '👋 Coach Removed',
+      `You are no longer assigned to ${coachName}. A new coach may be assigned soon.`,
+      { previousCoach: coachName }
+    );
+  }
   
   res.status(200).json({
     status: 'success',
@@ -311,7 +351,7 @@ exports.getSubscriptionDetails = asyncHandler(async (req, res) => {
 });
 
 /**
- * Create subscription
+ * Create subscription (Admin) - WITH NOTIFICATION
  * @route POST /api/admin/subscriptions
  */
 exports.createSubscription = asyncHandler(async (req, res) => {
@@ -362,18 +402,87 @@ exports.createSubscription = asyncHandler(async (req, res) => {
     paymentMethod,
     features: plans[plan].features,
     autoRenew,
-    status: 'active'
+    status: 'active',
+    paymentStatus: 'paid',
+    paymentDate: new Date()
   });
   
   // Update user's subscription
   user.subscription = subscription._id;
   await user.save();
   
+  // SEND NOTIFICATION TO USER
+  try {
+    await notificationController.createNotification(
+      userId,
+      'subscription',
+      '🎉 Subscription Activated!',
+      `Your ${plan.toUpperCase()} subscription has been activated. You now have access to all ${plan} features for ${duration}.`,
+      {
+        subscriptionId: subscription._id,
+        plan: plan,
+        price: price,
+        duration: duration,
+        endDate: endDate,
+        features: plans[plan].features
+      }
+    );
+    console.log(`✅ Notification sent to user ${userId} for subscription activation`);
+  } catch (notifError) {
+    console.error('Failed to send notification:', notifError);
+    // Don't throw - subscription still works
+  }
+  
   res.status(201).json({
     status: 'success',
     data: {
       subscription
     }
+  });
+});
+
+/**
+ * Mark subscription as paid (Admin)
+ * @route POST /api/admin/subscriptions/:subscriptionId/mark-paid
+ */
+exports.markSubscriptionAsPaid = asyncHandler(async (req, res) => {
+  const { subscriptionId } = req.params;
+  const { paymentReference } = req.body;
+  
+  const subscription = await Subscription.findById(subscriptionId).populate('user');
+  if (!subscription) {
+    throw new AppError('Subscription not found', 404);
+  }
+  
+  subscription.paymentStatus = 'paid';
+  subscription.status = 'active';
+  subscription.paymentDate = new Date();
+  if (paymentReference) {
+    subscription.paymentReference = paymentReference;
+  }
+  await subscription.save();
+  
+  // Update user's subscription reference
+  await User.findByIdAndUpdate(subscription.user._id, { subscription: subscription._id });
+  
+  // SEND NOTIFICATION FOR PAYMENT CONFIRMATION
+  await notificationController.createNotification(
+    subscription.user._id,
+    'subscription_payment',
+    '💰 Payment Received!',
+    `Your payment of ${subscription.price} MAD for the ${subscription.plan} plan has been confirmed. Your subscription is now active until ${new Date(subscription.endDate).toLocaleDateString()}.`,
+    {
+      subscriptionId: subscription._id,
+      plan: subscription.plan,
+      price: subscription.price,
+      endDate: subscription.endDate,
+      paymentReference
+    }
+  );
+  
+  res.status(200).json({
+    status: 'success',
+    data: { subscription }
   });
 });
 
@@ -385,6 +494,12 @@ exports.updateSubscription = asyncHandler(async (req, res) => {
   const { subscriptionId } = req.params;
   const { status, endDate, autoRenew } = req.body;
   
+  const subscription = await Subscription.findById(subscriptionId).populate('user');
+  if (!subscription) {
+    throw new AppError('Subscription not found', 404);
+  }
+  
+  const oldStatus = subscription.status;
   const updateData = { status, endDate, autoRenew };
   
   // Remove undefined fields
@@ -392,20 +507,43 @@ exports.updateSubscription = asyncHandler(async (req, res) => {
     updateData[key] === undefined && delete updateData[key]
   );
   
-  const subscription = await Subscription.findByIdAndUpdate(
+  const updatedSubscription = await Subscription.findByIdAndUpdate(
     subscriptionId,
     updateData,
     { new: true, runValidators: true }
   );
   
-  if (!subscription) {
-    throw new AppError('Subscription not found', 404);
+  // Send notification based on status change
+  if (oldStatus !== status && subscription.user) {
+    if (status === 'active') {
+      await notificationController.createNotification(
+        subscription.user._id,
+        'subscription',
+        '✅ Subscription Reactivated',
+        `Your ${subscription.plan} subscription has been reactivated. Welcome back!`,
+        { subscriptionId, plan: subscription.plan }
+      );
+    } else if (status === 'cancelled') {
+      await notificationController.createNotification(
+        subscription.user._id,
+        'subscription',
+        '❌ Subscription Cancelled',
+        `Your ${subscription.plan} subscription has been cancelled.`,
+        { subscriptionId, plan: subscription.plan }
+      );
+    } else if (status === 'expired') {
+      await notificationController.createNotification(
+        subscription.user._id,
+        'subscription_expiring',
+        '⚠️ Subscription Expired',
+        `Your ${subscription.plan} subscription has expired. Please renew to continue accessing premium features.`,
+        { subscriptionId, plan: subscription.plan }
+      );
+    }
   }
   
   res.status(200).json({
     status: 'success',
-    data: {
-      subscription
-    }
+    data: { subscription: updatedSubscription }
   });
 });

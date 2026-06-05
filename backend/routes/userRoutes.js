@@ -28,10 +28,33 @@ const weightEntryValidation = [
 router.use(authenticate);
 
 // ============================================
-// SPECIFIC ROUTES FIRST (BEFORE dynamic routes)
+// PROFILE ROUTES - ADD THE MISSING GET PROFILE
 // ============================================
 
-// Profile routes
+// ADD THIS - Get user profile
+router.get('/profile', async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id)
+      .select('-password')
+      .populate('coach', 'name email profilePicture')
+      .populate('subscription', 'plan status duration endDate');
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        user: user.getProfile()
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Profile update routes
 router.patch('/profile', updateProfileValidation, validate, userController.updateProfile);
 router.post('/change-password', authenticate, userController.changePassword);
 
@@ -66,16 +89,19 @@ router.get('/check-email', async (req, res, next) => {
 });
 
 // ============================================
+// OTHER ROUTES
+// ============================================
+
+// Upload profile picture
+router.post('/upload-profile-picture', upload.single('profilePicture'), userController.uploadProfilePicture);
+router.delete('/profile-picture', userController.deleteProfilePicture);
+
+// ============================================
 // DYNAMIC ROUTES LAST (catch-all)
 // ============================================
-  // Change password
-  router.post('/change-password', authenticate, userController.changePassword);
 
-
-  router.post('/upload-profile-picture', upload.single('profilePicture'), userController.uploadProfilePicture);
-  router.delete('/profile-picture', userController.deleteProfilePicture);
 // Get user by ID (MUST BE LAST - after all specific routes)
-  router.get('/:userId', async (req, res, next) => {
+router.get('/:userId', async (req, res, next) => {
   try {
     // Validate if the parameter is a valid ObjectId
     const isValidObjectId = req.params.userId.match(/^[0-9a-fA-F]{24}$/);

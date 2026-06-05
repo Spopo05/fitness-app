@@ -3,6 +3,7 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const path = require('path');
+const geminiRoutes = require('./routes/geminiRoutes');
 
 
 
@@ -51,6 +52,7 @@ app.use('/api/coaches', coachRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/ai', geminiRoutes);
 
 // Base route
 app.get('/', (req, res) => {

@@ -8,7 +8,7 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['message', 'diet_plan', 'workout', 'subscription', 'reminder', 'achievement'],
+    enum: ['message', 'diet_plan', 'workout', 'subscription', 'subscription_payment', 'subscription_expiring', 'reminder', 'achievement', 'coach_assigned'],
     required: true
   },
   title: {
@@ -39,6 +39,7 @@ const notificationSchema = new mongoose.Schema({
 // Index for faster queries
 notificationSchema.index({ user: 1, createdAt: -1 });
 notificationSchema.index({ user: 1, read: 1 });
+notificationSchema.index({ type: 1 });
 
 const Notification = mongoose.model('Notification', notificationSchema);
 

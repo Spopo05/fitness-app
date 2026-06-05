@@ -1,5 +1,4 @@
 const Notification = require('../models/notification.model');
-const User = require('../models/user.model');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 
 /**
@@ -106,7 +105,13 @@ exports.deleteAllNotifications = asyncHandler(async (req, res) => {
 });
 
 /**
- * Create notification (internal use)
+ * Create notification (internal use - called from other controllers)
+ * @param {string} userId - User ID
+ * @param {string} type - Notification type
+ * @param {string} title - Notification title
+ * @param {string} message - Notification message
+ * @param {object} data - Additional data
+ * @returns {object} - Created notification
  */
 exports.createNotification = async (userId, type, title, message, data = {}) => {
   try {
@@ -118,9 +123,27 @@ exports.createNotification = async (userId, type, title, message, data = {}) => 
       data,
       read: false
     });
+    
+    console.log(`📧 Notification created for user ${userId}: ${title}`);
     return notification;
   } catch (error) {
     console.error('Error creating notification:', error);
     return null;
   }
 };
+
+/**
+ * Get unread count only
+ * @route GET /api/notifications/unread-count
+ */
+exports.getUnreadCount = asyncHandler(async (req, res) => {
+  const unreadCount = await Notification.countDocuments({
+    user: req.user._id,
+    read: false
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: { unreadCount }
+  });
+});
