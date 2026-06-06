@@ -7,6 +7,7 @@ import LoadingSpinner from './components/LoadingSpinner';
 // Auth pages
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
+import LandingPage from './pages/LandingPage';
 
 // User pages
 import Dashboard from './pages/user/Dashboard';
@@ -45,14 +46,15 @@ function App() {
   }
 
   if (!user) {
-    return (
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    );
-  }
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
 
   // FIX: Trim the role to remove any spaces
   const userRole = (user.role || (user.admin === true ? 'admin' : 'user')).trim();

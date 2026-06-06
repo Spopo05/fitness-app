@@ -10,13 +10,12 @@ const Layout = ({ children }) => {
   const { i18n } = useTranslation()
   const isRTL = i18n.language === 'ar'
 
-  console.log('Layout - User:', user);
-  console.log('Layout - Children:', children);
-
   if (!user) {
-    console.log('Layout - No user, returning children only');
     return children;
   }
+
+  // Check if current route is messages
+  const isMessagesRoute = window.location.pathname === '/messages'
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
@@ -51,11 +50,19 @@ const Layout = ({ children }) => {
           </>
         )}
         
-        {/* Main Content */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="p-4 lg:p-6 xl:p-8">
-            {children}
-          </div>
+        {/* Main Content - FIXED FOR MESSAGES */}
+        <main className={`flex-1 ${isMessagesRoute ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+          {isMessagesRoute ? (
+            // For messages route - no extra padding, full height
+            <div className="h-full">
+              {children}
+            </div>
+          ) : (
+            // For other routes - with padding and scrolling
+            <div className="p-4 lg:p-6 xl:p-8">
+              {children}
+            </div>
+          )}
         </main>
       </div>
     </div>

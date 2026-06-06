@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { 
   Bot, Sparkles, Send, Dumbbell, Apple, Target, 
   MessageCircle, Brain, Heart, Clock, Calendar, 
   TrendingUp, Award, Zap, ChevronRight, Loader2,
   ThumbsUp, ThumbsDown, RefreshCw, Save, Share2,
-  BarChart3, Activity, Flame, Moon, Sun, Coffee,
-  Crown, Star, ZapIcon, Shield, ChevronDown, Mic, MicOff
+  BarChart3, Activity, Flame, Crown, Star, Shield,
+  Diamond, Gem
 } from 'lucide-react'
 import { format } from 'date-fns'
 import toast from 'react-hot-toast'
@@ -18,6 +19,7 @@ import { useAuth } from '../../contexts/AuthContext'
 const AIAssistant = () => {
   const { t, i18n } = useTranslation()
   const { user } = useAuth()
+  const navigate = useNavigate()
   const [message, setMessage] = useState('')
   const [conversation, setConversation] = useState([])
   const [isTyping, setIsTyping] = useState(false)
@@ -37,7 +39,6 @@ const AIAssistant = () => {
   })
   const [showWorkoutForm, setShowWorkoutForm] = useState(false)
   const [showMealForm, setShowMealForm] = useState(false)
-  const [isListening, setIsListening] = useState(false)
 
   const isRTL = i18n.language === 'ar'
   const isFrench = i18n.language === 'fr'
@@ -47,6 +48,20 @@ const AIAssistant = () => {
     if (isRTL) return ar
     return en
   }
+
+  // Check AI access (Premium or Elite only)
+  const { data: accessData, isLoading: accessLoading } = useQuery({
+    queryKey: ['aiAccess'],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/ai/check-access')
+        return response.data.data
+      } catch (error) {
+        return { hasAccess: false, plan: null }
+      }
+    },
+    retry: false
+  })
 
   // Fetch user data for AI context
   const { data: userData, isLoading: userLoading } = useQuery({
@@ -59,7 +74,8 @@ const AIAssistant = () => {
         console.error('Error fetching user:', error)
         return null
       }
-    }
+    },
+    enabled: accessData?.hasAccess === true
   })
 
   // Fetch weight history
@@ -73,7 +89,7 @@ const AIAssistant = () => {
         return []
       }
     },
-    enabled: !!userData
+    enabled: accessData?.hasAccess === true && !!userData
   })
 
   // Fetch upcoming workouts
@@ -87,7 +103,7 @@ const AIAssistant = () => {
         return []
       }
     },
-    enabled: !!userData
+    enabled: accessData?.hasAccess === true && !!userData
   })
 
   // Fetch current diet plan
@@ -101,10 +117,10 @@ const AIAssistant = () => {
         return null
       }
     },
-    enabled: !!userData
+    enabled: accessData?.hasAccess === true && !!userData
   })
 
-  // AI Chat Mutation - Calls Gemini through backend
+  // AI Chat Mutation
   const chatMutation = useMutation({
     mutationFn: async ({ message, context }) => {
       const response = await api.post('/ai/chat', { message, context })
@@ -119,8 +135,7 @@ const AIAssistant = () => {
           suggestions: data.suggestions || [
             getText('Create a workout plan for me', 'Créez un plan d\'entraînement pour moi', 'قم بإنشاء خطة تمرين لي'),
             getText('Help with my nutrition', 'Aide-moi avec ma nutrition', 'ساعدني في التغذية'),
-            getText('How to stay motivated?', 'Comment rester motivé ?', 'كيف أبقى متحفزاً؟'),
-            getText('Track my progress', 'Suivre ma progression', 'تتبع تقدمي')
+            getText('How to stay motivated?', 'Comment rester motivé ?', 'كيف أبقى متحفزاً?')
           ],
           timestamp: new Date() 
         }
@@ -178,7 +193,6 @@ const AIAssistant = () => {
   const handleSendMessage = () => {
     if (!message.trim()) return
     
-    // Get latest weight
     const latestWeight = weightHistory?.[weightHistory.length - 1]?.weight
     
     setConversation(prev => [...prev, { role: 'user', content: message, timestamp: new Date() }])
@@ -214,41 +228,6 @@ const AIAssistant = () => {
     }
   }
 
-  // Voice recognition (if supported)
-  const startVoiceRecognition = () => {
-    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-      toast.error(getText('Voice recognition not supported', 'Reconnaissance vocale non supportée', 'التعرف على الصوت غير مدعوم'))
-      return
-    }
-    
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    const recognition = new SpeechRecognition()
-    recognition.lang = isFrench ? 'fr-FR' : isRTL ? 'ar-AR' : 'en-US'
-    recognition.continuous = false
-    recognition.interimResults = false
-    
-    recognition.onstart = () => {
-      setIsListening(true)
-    }
-    
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript
-      setMessage(transcript)
-      setIsListening(false)
-    }
-    
-    recognition.onerror = () => {
-      setIsListening(false)
-      toast.error(getText('Could not recognize voice', 'Impossible de reconnaître la voix', 'لم يتم التعرف على الصوت'))
-    }
-    
-    recognition.onend = () => {
-      setIsListening(false)
-    }
-    
-    recognition.start()
-  }
-
   const quickQuestions = [
     { icon: Dumbbell, text: getText('Suggest a workout for weight loss', 'Suggère un entraînement pour perdre du poids', 'اقترح تمرينًا لفقدان الوزن'), color: 'blue' },
     { icon: Apple, text: getText('Create a healthy meal plan', 'Crée un plan de repas sain', 'إنشاء خطة وجبات صحية'), color: 'green' },
@@ -261,6 +240,82 @@ const AIAssistant = () => {
     if (hour < 12) return getText('Good morning', 'Bonjour', 'صباح الخير')
     if (hour < 18) return getText('Good afternoon', 'Bon après-midi', 'مساء الخير')
     return getText('Good evening', 'Bonsoir', 'مساء الخير')
+  }
+
+  // Show loading while checking access
+  if (accessLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <LoadingSpinner size="lg" />
+      </div>
+    )
+  }
+
+  // If no access, show upgrade page
+  if (!accessData?.hasAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[70vh] text-center p-8">
+        <div className="w-28 h-28 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mb-6 shadow-xl">
+          <Crown className="h-14 w-14 text-white" />
+        </div>
+        <h1 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-3">
+          {getText('AI Assistant Locked', 'Assistant IA Verrouillé', 'المساعد الذكي مقفل')} 🔒
+        </h1>
+        <p className="text-gray-600 mb-6 max-w-md">
+          {accessData?.message || getText(
+            'AI Assistant is a premium feature available only for Premium and Elite subscribers.',
+            "L'assistant IA est une fonctionnalité premium disponible uniquement pour les abonnés Premium et Elite.",
+            'المساعد الذكي هو ميزة مميزة متاحة فقط للمشتركين في بريميوم وإيليت.'
+          )}
+        </p>
+        
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl p-6 max-w-md w-full mb-6">
+          <h3 className="font-bold text-xl text-gray-900 mb-3 flex items-center gap-2 justify-center">
+            <Sparkles className="h-5 w-5 text-purple-500" />
+            {getText('Unlock AI Features', 'Débloquez les fonctionnalités IA', 'افتح ميزات الذكاء الاصطناعي')}
+            <Sparkles className="h-5 w-5 text-pink-500" />
+          </h3>
+          <ul className="text-sm text-gray-700 space-y-2 mb-5 text-left">
+            <li className="flex items-center gap-2">
+              <Zap className="h-4 w-4 text-purple-500" /> {getText('Personalized AI workout plans', 'Plans d\'entraînement IA personnalisés', 'خطط تمارين مخصصة بالذكاء الاصطناعي')}
+            </li>
+            <li className="flex items-center gap-2">
+              <Star className="h-4 w-4 text-yellow-500" /> {getText('Smart nutrition recommendations', 'Recommandations nutritionnelles intelligentes', 'توصيات غذائية ذكية')}
+            </li>
+            <li className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-green-500" /> {getText('24/7 AI fitness coaching', 'Coaching fitness IA 24/7', 'تدريب لياقة بالذكاء الاصطناعي 24/7')}
+            </li>
+            <li className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-blue-500" /> {getText('Progress predictions and insights', 'Prédictions de progression et insights', 'توقعات التقدم والرؤى')}
+            </li>
+          </ul>
+          
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <div className="bg-white rounded-lg p-3 text-center">
+              <Gem className="h-5 w-5 text-purple-500 mx-auto mb-1" />
+              <p className="text-xs font-semibold">Premium</p>
+              <p className="text-xs text-gray-500">149 MAD/mo</p>
+            </div>
+            <div className="bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg p-3 text-center">
+              <Diamond className="h-5 w-5 text-purple-600 mx-auto mb-1" />
+              <p className="text-xs font-semibold">Elite</p>
+              <p className="text-xs text-gray-600">249 MAD/mo</p>
+            </div>
+          </div>
+          
+          <button
+            onClick={() => navigate('/subscription')}
+            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-xl font-semibold hover:from-purple-700 hover:to-pink-700 transition-all shadow-md"
+          >
+            {getText('Upgrade to Premium', 'Passer à Premium', 'الترقية إلى بريميوم')}
+          </button>
+        </div>
+        
+        <p className="text-xs text-gray-400">
+          {getText('Already have Premium or Elite? Contact support if you still see this message.', 'Vous avez déjà Premium ou Elite ? Contactez le support si vous voyez toujours ce message.', 'لديك بالفعل بريميوم أو إيليت؟ اتصل بالدعم إذا كنت لا تزال ترى هذه الرسالة.')}
+        </p>
+      </div>
+    )
   }
 
   if (userLoading) {
@@ -277,23 +332,29 @@ const AIAssistant = () => {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl">
+            <div className="p-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl">
               <Bot className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                {getText('AI Fitness Assistant', 'Assistant Fitness IA', 'مساعد اللياقة الذكي')}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold text-gray-900">
+                  {getText('AI Fitness Assistant', 'Assistant Fitness IA', 'مساعد اللياقة الذكي')}
+                </h1>
+                <div className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-yellow-500 to-amber-500 rounded-full">
+                  <Crown className="h-3 w-3 text-white" />
+                  <span className="text-[10px] text-white font-bold uppercase">{accessData?.plan}</span>
+                </div>
+              </div>
               <p className="text-gray-500 text-sm flex items-center gap-1">
                 <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
-                {getText('Powered by Google Gemini - Your personal AI coach', 'Propulsé par Google Gemini - Votre coach personnel', 'مدعوم من Google Gemini - مدربك الشخصي')}
+                {getText('Powered by Google Gemini - Premium AI Coach', 'Propulsé par Google Gemini - Coach IA Premium', 'مدعوم من Google Gemini - مدرب ذكي مميز')}
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-500/10 to-purple-500/10 rounded-full">
-            <Sparkles className="h-4 w-4 text-purple-500" />
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-full">
+            <Diamond className="h-4 w-4 text-purple-500" />
             <span className="text-xs font-medium text-purple-600">
-              {getText('Gemini AI Ready', 'Gemini IA Prêt', 'Gemini AI جاهز')}
+              {getText('Premium Feature', 'Fonctionnalité Premium', 'ميزة بريميوم')}
             </span>
           </div>
         </div>
@@ -305,7 +366,7 @@ const AIAssistant = () => {
           onClick={() => setActiveTab('chat')}
           className={`flex items-center gap-2 px-4 py-2 font-medium transition-colors ${
             activeTab === 'chat'
-              ? 'text-blue-600 border-b-2 border-blue-600'
+              ? 'text-purple-600 border-b-2 border-purple-600'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
@@ -316,7 +377,7 @@ const AIAssistant = () => {
           onClick={() => setActiveTab('generate')}
           className={`flex items-center gap-2 px-4 py-2 font-medium transition-colors ${
             activeTab === 'generate'
-              ? 'text-blue-600 border-b-2 border-blue-600'
+              ? 'text-purple-600 border-b-2 border-purple-600'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
@@ -327,14 +388,14 @@ const AIAssistant = () => {
           onClick={() => setActiveTab('saved')}
           className={`flex items-center gap-2 px-4 py-2 font-medium transition-colors ${
             activeTab === 'saved'
-              ? 'text-blue-600 border-b-2 border-blue-600'
+              ? 'text-purple-600 border-b-2 border-purple-600'
               : 'text-gray-500 hover:text-gray-700'
           }`}
         >
           <Save className="h-4 w-4" />
           {getText('Saved', 'Sauvegardés', 'المحفوظات')}
           {savedRecommendations.length > 0 && (
-            <span className="ml-1 px-1.5 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">
+            <span className="ml-1 px-1.5 py-0.5 bg-purple-100 text-purple-600 text-xs rounded-full">
               {savedRecommendations.length}
             </span>
           )}
@@ -344,12 +405,10 @@ const AIAssistant = () => {
       {/* Chat Tab */}
       {activeTab === 'chat' && (
         <div className="flex-1 flex flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          {/* Chat Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* Welcome Message */}
             {conversation.length === 0 && (
               <div className="text-center py-8">
-                <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4">
                   <Bot className="h-8 w-8 text-white" />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-900 mb-2">
@@ -363,7 +422,6 @@ const AIAssistant = () => {
                   )}
                 </p>
                 
-                {/* User Context Card */}
                 {(userData?.height || weightHistory?.length > 0 || userData?.goals) && (
                   <div className="mt-6 p-3 bg-gray-50 rounded-xl max-w-md mx-auto">
                     <p className="text-xs text-gray-500 mb-2">
@@ -383,7 +441,6 @@ const AIAssistant = () => {
                   </div>
                 )}
                 
-                {/* Quick Questions */}
                 <div className="grid grid-cols-2 gap-3 mt-6 max-w-lg mx-auto">
                   {quickQuestions.map((q, idx) => {
                     const Icon = q.icon
@@ -403,7 +460,6 @@ const AIAssistant = () => {
               </div>
             )}
 
-            {/* Messages */}
             {conversation.map((msg, idx) => (
               <div
                 key={idx}
@@ -412,19 +468,19 @@ const AIAssistant = () => {
                 <div className={`max-w-[80%] ${msg.role === 'user' ? 'order-2' : 'order-1'}`}>
                   <div className="flex items-start gap-2">
                     {msg.role === 'assistant' && (
-                      <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
+                      <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
                         <Bot className="h-4 w-4 text-white" />
                       </div>
                     )}
                     <div
                       className={`p-3 rounded-2xl ${
                         msg.role === 'user'
-                          ? 'bg-blue-600 text-white rounded-br-sm'
+                          ? 'bg-purple-600 text-white rounded-br-sm'
                           : 'bg-gray-100 text-gray-800 rounded-bl-sm'
                       }`}
                     >
                       <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                      <p className={`text-xs mt-1 ${msg.role === 'user' ? 'text-blue-200' : 'text-gray-400'}`}>
+                      <p className={`text-xs mt-1 ${msg.role === 'user' ? 'text-purple-200' : 'text-gray-400'}`}>
                         {format(new Date(msg.timestamp), 'HH:mm')}
                       </p>
                     </div>
@@ -435,7 +491,6 @@ const AIAssistant = () => {
                     )}
                   </div>
 
-                  {/* Suggestions */}
                   {msg.suggestions && msg.suggestions.length > 0 && (
                     <div className="flex flex-wrap gap-2 mt-2 ml-10">
                       {msg.suggestions.map((suggestion, sIdx) => (
@@ -453,7 +508,6 @@ const AIAssistant = () => {
               </div>
             ))}
 
-            {/* Typing Indicator */}
             {isTyping && (
               <div className="flex justify-start">
                 <div className="flex items-center gap-2 bg-gray-100 rounded-2xl px-4 py-2">
@@ -470,7 +524,6 @@ const AIAssistant = () => {
             )}
           </div>
 
-          {/* Input Area */}
           <div className="p-4 border-t border-gray-200">
             <div className="flex gap-2">
               <input
@@ -483,20 +536,13 @@ const AIAssistant = () => {
                   "Demandez-moi n'importe quoi sur le fitness, la nutrition ou l'entraînement...",
                   "اسألني أي شيء عن اللياقة أو التغذية أو التمارين..."
                 )}
-                className="flex-1 px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-4 py-2 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
                 disabled={chatMutation.isPending}
               />
               <button
-                onClick={startVoiceRecognition}
-                className={`p-2 rounded-xl transition ${isListening ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                title="Voice input"
-              >
-                {isListening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-              </button>
-              <button
                 onClick={handleSendMessage}
                 disabled={!message.trim() || chatMutation.isPending}
-                className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition disabled:opacity-50"
+                className="p-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition disabled:opacity-50 shadow-md"
               >
                 {chatMutation.isPending ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -518,11 +564,10 @@ const AIAssistant = () => {
       {/* Generate Plans Tab */}
       {activeTab === 'generate' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Workout Generator */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center gap-2 mb-4">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Dumbbell className="h-5 w-5 text-blue-600" />
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Dumbbell className="h-5 w-5 text-purple-600" />
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">
@@ -537,7 +582,7 @@ const AIAssistant = () => {
             {!showWorkoutForm ? (
               <button
                 onClick={() => setShowWorkoutForm(true)}
-                className="w-full py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition flex items-center justify-center gap-2"
+                className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:from-purple-600 hover:to-pink-600 transition flex items-center justify-center gap-2"
               >
                 <Sparkles className="h-4 w-4" />
                 {getText('Create New Workout Plan', 'Créer un nouveau plan', 'إنشاء خطة تمرين جديدة')}
@@ -551,7 +596,7 @@ const AIAssistant = () => {
                   <select
                     value={workoutPreferences.goal}
                     onChange={(e) => setWorkoutPreferences({ ...workoutPreferences, goal: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-purple-500"
                   >
                     <option value="weight_loss">{getText('Weight Loss', 'Perte de poids', 'فقدان الوزن')}</option>
                     <option value="muscle_gain">{getText('Muscle Gain', 'Gain musculaire', 'زيادة العضلات')}</option>
@@ -607,7 +652,7 @@ const AIAssistant = () => {
                   <button
                     onClick={() => generateWorkoutMutation.mutate(workoutPreferences)}
                     disabled={generateWorkoutMutation.isPending}
-                    className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
+                    className="flex-1 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-lg hover:from-purple-700 hover:to-pink-700 transition disabled:opacity-50"
                   >
                     {generateWorkoutMutation.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin inline" />
@@ -629,7 +674,6 @@ const AIAssistant = () => {
             )}
           </div>
 
-          {/* Meal Plan Generator */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center gap-2 mb-4">
               <div className="p-2 bg-green-100 rounded-lg">
@@ -715,7 +759,7 @@ const AIAssistant = () => {
                   <button
                     onClick={() => generateMealMutation.mutate(mealPreferences)}
                     disabled={generateMealMutation.isPending}
-                    className="flex-1 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition disabled:opacity-50"
+                    className="flex-1 py-2 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition disabled:opacity-50"
                   >
                     {generateMealMutation.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin inline" />
@@ -758,8 +802,8 @@ const AIAssistant = () => {
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2">
                     {rec.type === 'workout' ? (
-                      <div className="p-1.5 bg-blue-100 rounded-lg">
-                        <Dumbbell className="h-4 w-4 text-blue-600" />
+                      <div className="p-1.5 bg-purple-100 rounded-lg">
+                        <Dumbbell className="h-4 w-4 text-purple-600" />
                       </div>
                     ) : (
                       <div className="p-1.5 bg-green-100 rounded-lg">
@@ -788,7 +832,7 @@ const AIAssistant = () => {
                       setMessage(rec.message.substring(0, 100))
                       setActiveTab('chat')
                     }}
-                    className="px-3 py-1 text-xs bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition"
+                    className="px-3 py-1 text-xs bg-purple-50 text-purple-600 rounded-lg hover:bg-purple-100 transition"
                   >
                     {getText('Ask about this', 'Poser une question', 'اسأل عن هذا')}
                   </button>
@@ -808,44 +852,7 @@ const AIAssistant = () => {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-4 gap-3 mt-6">
-        <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-gray-100">
-          <Flame className="h-5 w-5 text-orange-500 mx-auto mb-1" />
-          <p className="text-xs font-medium text-gray-900">
-            {getText('Daily Goal', 'Objectif quotidien', 'الهدف اليومي')}
-          </p>
-          <p className="text-xs text-gray-500">
-            {getText('Track progress', 'Suivre progression', 'تتبع التقدم')}
-          </p>
-        </div>
-        <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-gray-100">
-          <Brain className="h-5 w-5 text-purple-500 mx-auto mb-1" />
-          <p className="text-xs font-medium text-gray-900">
-            {getText('AI Coach', 'Coach IA', 'مدرب ذكي')}
-          </p>
-          <p className="text-xs text-gray-500">
-            {getText('24/7 available', 'Disponible 24/7', 'متاح 24/7')}
-          </p>
-        </div>
-        <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-gray-100">
-          <BarChart3 className="h-5 w-5 text-blue-500 mx-auto mb-1" />
-          <p className="text-xs font-medium text-gray-900">
-            {getText('Smart Insights', 'Analyses intelligentes', 'رؤى ذكية')}
-          </p>
-          <p className="text-xs text-gray-500">
-            {getText('Data-driven', 'Basé sur les données', 'مدعوم بالبيانات')}
-          </p>
-        </div>
-        <div className="bg-white rounded-xl p-3 text-center shadow-sm border border-gray-100">
-          <Activity className="h-5 w-5 text-green-500 mx-auto mb-1" />
-          <p className="text-xs font-medium text-gray-900">
-            {getText('Real-time', 'Temps réel', 'وقت حقيقي')}
-          </p>
-          <p className="text-xs text-gray-500">
-            {getText('Feedback', 'Retour', 'تغذية راجعة')}
-          </p>
-        </div>
-      </div>
+      
     </div>
   )
 }
