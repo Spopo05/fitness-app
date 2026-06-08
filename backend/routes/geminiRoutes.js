@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
+const Subscription = require('../models/subscription.model');
 
 // Initialize Gemini only if API key exists
 let GoogleGenerativeAI;
 let genAI = null;
-const MODEL = 'gemini-2.5-flash';// ✅ Fixed model name
+const MODEL = 'gemini-2.5-flash'; // Changed to gemini-pro which is more stable
 
 try {
   GoogleGenerativeAI = require('@google/generative-ai').GoogleGenerativeAI;
@@ -19,12 +20,127 @@ try {
   console.log('❌ @google/generative-ai package not installed. Run: npm install @google/generative-ai');
 }
 
+// All routes require authentication
 router.use(authenticate);
+
+// ============================================
+// AI ACCESS CHECK MIDDLEWARE
+// ============================================
+const checkAIAccess = async (req, res, next) => {
+  try {
+    // Admin always has access
+    if (req.user.role === 'admin') {
+      return next();
+    }
+    
+    // Check if user has an active subscription
+    const subscription = await Subscription.findOne({
+      user: req.user._id,
+      status: 'active'
+    });
+    
+    if (!subscription) {
+      return res.status(403).json({
+        status: 'error',
+        message: 'AI Assistant is only available for Premium and Elite subscribers. Please upgrade your plan to access this feature.',
+        code: 'UPGRADE_REQUIRED'
+      });
+    }
+    
+    // Get plan details
+    const plans = Subscription.getPlans();
+    const plan = plans[subscription.plan];
+    
+    // Check if plan has AI access (Premium or Elite only)
+    if (!plan || !plan.hasAIAssistant) {
+      return res.status(403).json({
+        status: 'error',
+        message: `AI Assistant is not included in your ${subscription.plan} plan. Please upgrade to Premium or Elite to access AI features.`,
+        code: 'UPGRADE_REQUIRED',
+        currentPlan: subscription.plan,
+        requiredPlans: ['premium', 'elite']
+      });
+    }
+    
+    // Attach subscription info for optional use
+    req.subscription = subscription;
+    next();
+  } catch (error) {
+    console.error('AI Access check error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Error checking access permissions'
+    });
+  }
+};
+
+// ============================================
+// PUBLIC ACCESS CHECK (no AI access required)
+// ============================================
 
 // Test endpoint
 router.get('/test', (req, res) => {
   res.json({ status: 'success', message: 'AI routes are working!' });
 });
+
+// Check if user has access to AI features
+router.get('/check-access', async (req, res) => {
+  try {
+    // Admin always has access
+    if (req.user.role === 'admin') {
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          hasAccess: true,
+          plan: 'admin',
+          message: 'Admin access granted'
+        }
+      });
+    }
+    
+    const subscription = await Subscription.findOne({
+      user: req.user._id,
+      status: 'active'
+    });
+    
+    if (!subscription) {
+      return res.status(200).json({
+        status: 'success',
+        data: {
+          hasAccess: false,
+          plan: null,
+          message: 'AI Assistant is only available for Premium and Elite subscribers.'
+        }
+      });
+    }
+    
+    const plans = Subscription.getPlans();
+    const plan = plans[subscription.plan];
+    const hasAccess = plan?.hasAIAssistant === true;
+    
+    res.status(200).json({
+      status: 'success',
+      data: {
+        hasAccess,
+        plan: subscription.plan,
+        message: hasAccess ? 'Access granted' : `Upgrade to Premium or Elite to access AI features.`,
+        features: hasAccess ? plan?.features : null
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// ============================================
+// PROTECTED AI ROUTES (require AI access)
+// ============================================
+
+// Apply AI access check to all following routes
+router.use(checkAIAccess);
 
 // Chat endpoint
 router.post('/chat', async (req, res) => {
@@ -53,7 +169,7 @@ Question: ${message}
 
 Give a helpful, friendly fitness response. Keep it concise. Use emojis. Be encouraging.`;
 
-    const model = genAI.getGenerativeModel({ model: MODEL }); // ✅ Fixed
+    const model = genAI.getGenerativeModel({ model: MODEL });
     const result = await model.generateContent(prompt);
     const aiMessage = result.response.text();
     
@@ -93,7 +209,7 @@ Frequency: ${frequency} days/week. Equipment: ${equipment === 'none' ? 'bodyweig
 
 Include: warm-up, main exercises (sets/reps), cool-down, and tips. Make it practical.`;
 
-    const model = genAI.getGenerativeModel({ model: MODEL }); // ✅ Fixed
+    const model = genAI.getGenerativeModel({ model: MODEL });
     const result = await model.generateContent(prompt);
     
     res.json({ status: 'success', message: result.response.text() });
@@ -117,7 +233,7 @@ Diet: ${dietType}. Avoid: ${allergies || 'none'}.
 
 Include: breakfast, lunch, snack, dinner, and hydration tips.`;
 
-    const model = genAI.getGenerativeModel({ model: MODEL }); // ✅ Fixed
+    const model = genAI.getGenerativeModel({ model: MODEL });
     const result = await model.generateContent(prompt);
     
     res.json({ status: 'success', message: result.response.text() });

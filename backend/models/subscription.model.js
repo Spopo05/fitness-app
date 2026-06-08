@@ -37,6 +37,11 @@ const subscriptionSchema = new mongoose.Schema({
     enum: ['active', 'expired', 'cancelled', 'pending'],
     default: 'pending'
   },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'paid', 'failed', 'refunded'],
+    default: 'pending'
+  },
   paymentMethod: {
     type: String,
     enum: ['card', 'bank_transfer', 'cash', 'cih', 'attijari', 'bmce'],
@@ -45,6 +50,9 @@ const subscriptionSchema = new mongoose.Schema({
   paymentReference: {
     type: String,
     default: ''
+  },
+  paymentDate: {
+    type: Date
   },
   autoRenew: {
     type: Boolean,
@@ -83,7 +91,9 @@ subscriptionSchema.statics.getPlans = function() {
         'Basic diet plans',
         'Email support',
         'Progress tracking'
-      ]
+      ],
+      hasAIAssistant: false,
+      color: 'gray'
     },
     pro: {
       name: 'Pro',
@@ -99,7 +109,9 @@ subscriptionSchema.statics.getPlans = function() {
         'Priority support',
         'Video coaching calls',
         'Monthly progress reports'
-      ]
+      ],
+      hasAIAssistant: false,
+      color: 'blue'
     },
     premium: {
       name: 'Premium',
@@ -115,7 +127,9 @@ subscriptionSchema.statics.getPlans = function() {
         'Weekly check-ins',
         'Unlimited messaging with coach',
         'Access to exclusive content'
-      ]
+      ],
+      hasAIAssistant: true,
+      color: 'yellow'
     },
     elite: {
       name: 'Elite',
@@ -132,7 +146,9 @@ subscriptionSchema.statics.getPlans = function() {
         '24/7 priority support',
         'Free merchandise',
         'VIP event access'
-      ]
+      ],
+      hasAIAssistant: true,
+      color: 'purple'
     }
   };
 };
@@ -162,6 +178,19 @@ subscriptionSchema.methods.isActive = function() {
 // Format price with MAD currency
 subscriptionSchema.methods.formattedPrice = function() {
   return `${this.price} MAD`;
+};
+
+// Check if subscription has AI access
+subscriptionSchema.methods.hasAIAccess = function() {
+  if (!this.isActive()) return false;
+  const plans = this.constructor.getPlans();
+  return plans[this.plan]?.hasAIAssistant === true;
+};
+
+// Get plan details
+subscriptionSchema.methods.getPlanDetails = function() {
+  const plans = this.constructor.getPlans();
+  return plans[this.plan];
 };
 
 const Subscription = mongoose.model('Subscription', subscriptionSchema);

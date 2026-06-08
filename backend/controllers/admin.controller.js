@@ -25,7 +25,7 @@ exports.getAllUsers = asyncHandler(async (req, res) => {
   const options = {
     page: parseInt(page, 10),
     limit: parseInt(limit, 10),
-    skip: (page - 1) * limit
+    skip: (parseInt(page, 10) - 1) * parseInt(limit, 10)
   };
   
   // Get users with coach populated
@@ -94,13 +94,17 @@ exports.createUser = asyncHandler(async (req, res) => {
     name,
     email,
     password,
-    role
+    role: role || 'user'
   });
+  
+  // Remove password from response
+  const userResponse = user.toObject();
+  delete userResponse.password;
   
   res.status(201).json({
     status: 'success',
     data: {
-      user: user.getProfile()
+      user: userResponse
     }
   });
 });
@@ -205,7 +209,7 @@ exports.assignCoach = asyncHandler(async (req, res) => {
   );
   
   // SEND NOTIFICATION TO COACH
-  if (oldCoach?.toString() !== coachId) {
+  if (oldCoach && oldCoach.toString() !== coachId) {
     await notificationController.createNotification(
       coachId,
       'coach_assigned',
@@ -303,7 +307,7 @@ exports.getAllSubscriptions = asyncHandler(async (req, res) => {
   const options = {
     page: parseInt(page, 10),
     limit: parseInt(limit, 10),
-    skip: (page - 1) * limit
+    skip: (parseInt(page, 10) - 1) * parseInt(limit, 10)
   };
   
   // Get subscriptions
@@ -545,5 +549,176 @@ exports.updateSubscription = asyncHandler(async (req, res) => {
   res.status(200).json({
     status: 'success',
     data: { subscription: updatedSubscription }
+  });
+});
+
+/**
+ * Get users on free trial
+ * @route GET /api/admin/users/free-trial
+ */
+exports.getFreeTrialUsers = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 10, status = 'active' } = req.query;
+  const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+  
+  let query = {};
+  const now = new Date();
+  
+  if (status === 'active') {
+    // Active free trials (not expired)
+    query = {
+      freeTrialEnds: { $gt: now },
+      freeTrialUsed: true,
+      role: 'user'
+    };
+  } else if (status === 'expired') {
+    // Expired free trials
+    query = {
+      freeTrialEnds: { $lt: now },
+      freeTrialUsed: true,
+      role: 'user'
+    };
+  } else if (status === 'ending-soon') {
+    // Trials ending in next 3 days
+    const threeDaysFromNow = new Date(now);
+    threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
+    query = {
+      freeTrialEnds: { $gt: now, $lt: threeDaysFromNow },
+      freeTrialUsed: true,
+      role: 'user'
+    };
+  }
+  
+  const users = await User.find(query)
+    .select('name email freeTrialStart freeTrialEnds createdAt subscription')
+    .populate('subscription', 'plan status')
+    .sort({ freeTrialEnds: 1 })
+    .skip(skip)
+    .limit(parseInt(limit, 10));
+  
+  const total = await User.countDocuments(query);
+  
+  // Calculate days remaining for each user
+  const usersWithDaysRemaining = users.map(user => {
+    const daysRemaining = Math.ceil((new Date(user.freeTrialEnds) - now) / (1000 * 60 * 60 * 24));
+    return {
+      ...user.toObject(),
+      daysRemaining: daysRemaining > 0 ? daysRemaining : 0,
+      isExpired: daysRemaining <= 0
+    };
+  });
+  
+  res.status(200).json({
+    status: 'success',
+    results: users.length,
+    total,
+    pages: Math.ceil(total / parseInt(limit, 10)),
+    currentPage: parseInt(page, 10),
+    data: {
+      users: usersWithDaysRemaining
+    }
+  });
+});
+
+/**
+ * Get free trial stats
+ * @route GET /api/admin/free-trial/stats
+ */
+exports.getFreeTrialStats = asyncHandler(async (req, res) => {
+  const now = new Date();
+  const threeDaysFromNow = new Date(now);
+  threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
+  
+  const activeTrials = await User.countDocuments({
+    freeTrialEnds: { $gt: now },
+    freeTrialUsed: true,
+    role: 'user'
+  });
+  
+  const expiredTrials = await User.countDocuments({
+    freeTrialEnds: { $lt: now },
+    freeTrialUsed: true,
+    role: 'user'
+  });
+  
+  const endingSoon = await User.countDocuments({
+    freeTrialEnds: { $gt: now, $lt: threeDaysFromNow },
+    freeTrialUsed: true,
+    role: 'user'
+  });
+  
+  const totalFreeTrialUsers = await User.countDocuments({
+    freeTrialUsed: true,
+    role: 'user'
+  });
+  
+  // Get users whose trial ends today
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  
+  const endingToday = await User.find({
+    freeTrialEnds: { $gte: today, $lt: tomorrow },
+    freeTrialUsed: true,
+    role: 'user'
+  }).select('name email freeTrialEnds');
+  
+  res.status(200).json({
+    status: 'success',
+    data: {
+      stats: {
+        activeTrials,
+        expiredTrials,
+        endingSoon,
+        totalFreeTrialUsers
+      },
+      endingToday
+    }
+  });
+});
+
+/**
+ * Extend free trial for a user (Admin)
+ * @route POST /api/admin/users/:userId/extend-trial
+ */
+exports.extendFreeTrial = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const { days = 7 } = req.body;
+  
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+  
+  const newEndDate = new Date();
+  newEndDate.setDate(newEndDate.getDate() + days);
+  
+  user.freeTrialEnds = newEndDate;
+  user.freeTrialUsed = true;
+  await user.save();
+  
+  // Create notification for user
+  await notificationController.createNotification(
+    userId,
+    'subscription',
+    '🎁 Free Trial Extended!',
+    `Your free trial has been extended by ${days} days. You now have access until ${newEndDate.toLocaleDateString()}.`,
+    {
+      type: 'trial_extended',
+      days: days,
+      newEndDate: newEndDate
+    }
+  );
+  
+  res.status(200).json({
+    status: 'success',
+    data: {
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        freeTrialEnds: user.freeTrialEnds
+      }
+    }
   });
 });

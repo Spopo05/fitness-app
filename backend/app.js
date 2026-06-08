@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const path = require('path');
 const geminiRoutes = require('./routes/geminiRoutes');
+const { errorHandler } = require('./middleware/errorHandler');
 
 
 
@@ -40,6 +41,7 @@ const dietPlanRoutes = require('./routes/dietPlanRoutes');
 const coachRoutes = require('./routes/coachRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
+const contactRoutes = require('./routes/contactRoutes');
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -53,10 +55,13 @@ app.use('/api/admin', adminRoutes);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/ai', geminiRoutes);
+app.use('/api/contact', contactRoutes);
 
 // Base route
 app.get('/', (req, res) => {
   res.send('🏋️‍♂️ Fitness API is running...');
 });
+
+app.use(errorHandler);
 
 module.exports = app;

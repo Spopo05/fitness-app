@@ -35,7 +35,8 @@ exports.getPlans = asyncHandler(async (req, res) => {
     },
     features: plan.features,
     popular: key === 'pro',
-    bestValue: key === 'premium'
+    bestValue: key === 'premium',
+    hasFreeTrial: key === 'basic'
   }));
   
   res.status(200).json({
@@ -49,50 +50,119 @@ exports.getPlans = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get current user's subscription
+ * Get current user's subscription and free trial info
  * @route GET /api/subscriptions/current
  */
 exports.getCurrentSubscription = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  
+  // ✅ Only consider free trial active if user has used it AND end date is in future
+  const hasActiveFreeTrial = user?.freeTrialUsed === true && 
+                             user?.freeTrialEnds && 
+                             new Date() < new Date(user.freeTrialEnds);
+  
+  // Get active subscription
   const subscription = await Subscription.findOne({
     user: req.user._id,
     status: 'active'
   }).populate('user', 'name email');
   
-  if (!subscription) {
+  let freeTrialInfo = null;
+  
+  if (hasActiveFreeTrial) {
+    const daysRemaining = Math.ceil((new Date(user.freeTrialEnds) - new Date()) / (1000 * 60 * 60 * 24));
+    const hoursRemaining = Math.ceil((new Date(user.freeTrialEnds) - new Date()) / (1000 * 60 * 60));
+    
+    freeTrialInfo = {
+      isActive: true,
+      startDate: user.freeTrialStart,
+      endDate: user.freeTrialEnds,
+      daysRemaining: daysRemaining,
+      hoursRemaining: hoursRemaining,
+      message: `Free trial active until ${new Date(user.freeTrialEnds).toLocaleString()}`
+    };
+    
+    console.log(`✅ Free trial active for: ${user.email} until ${user.freeTrialEnds}`);
+  } else if (user?.freeTrialUsed === true && user?.freeTrialEnds && new Date() > new Date(user.freeTrialEnds)) {
+    // Expired free trial
+    console.log(`⚠️ Free trial expired for: ${user.email} on ${user.freeTrialEnds}`);
+  }
+  
+  if (!subscription && !hasActiveFreeTrial) {
     return res.status(200).json({
       status: 'success',
       data: {
         subscription: null,
-        message: 'No active subscription'
+        freeTrial: null,
+        canStartFreeTrial: !user?.freeTrialUsed,
+        message: 'No active subscription or free trial'
       }
     });
   }
   
-  const isActive = subscription.isActive();
-  if (!isActive && subscription.status === 'active') {
-    subscription.status = 'expired';
-    await subscription.save();
+  let subscriptionData = null;
+  if (subscription) {
+    const isActive = subscription.isActive();
+    if (!isActive && subscription.status === 'active') {
+      subscription.status = 'expired';
+      await subscription.save();
+    }
+    
+    subscriptionData = {
+      ...subscription.toObject(),
+      isActive,
+      formattedPrice: subscription.formattedPrice(),
+      daysRemaining: Math.max(0, Math.ceil((subscription.endDate - new Date()) / (1000 * 60 * 60 * 24)))
+    };
   }
   
   res.status(200).json({
     status: 'success',
     data: {
-      subscription: {
-        ...subscription.toObject(),
-        isActive,
-        formattedPrice: subscription.formattedPrice(),
-        daysRemaining: Math.max(0, Math.ceil((subscription.endDate - new Date()) / (1000 * 60 * 60 * 24)))
-      }
+      subscription: subscriptionData,
+      freeTrial: freeTrialInfo,
+      canStartFreeTrial: !user?.freeTrialUsed
     }
   });
 });
 
 /**
- * Create new subscription (User self-subscription)
+ * Check if user can start free trial
+ * @route GET /api/subscriptions/can-start-free-trial
+ */
+exports.canStartFreeTrial = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  
+  const canStart = !user.freeTrialUsed;
+  
+  res.status(200).json({
+    status: 'success',
+    data: {
+      canStartFreeTrial: canStart,
+      hasUsedFreeTrial: user.freeTrialUsed === true,
+      message: canStart ? 'You are eligible for a 7-day free trial on the Basic plan' : 'You have already used your free trial'
+    }
+  });
+});
+
+/**
+ * Create new subscription (User self-subscription) with OPTIONAL FREE TRIAL
  * @route POST /api/subscriptions/create
  */
 exports.createSubscription = asyncHandler(async (req, res) => {
-  const { planId, duration, paymentMethod } = req.body;
+  const { planId, duration, paymentMethod, useFreeTrial = false } = req.body;
+  
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+  
+  // Check if user already has active free trial
+  const hasActiveFreeTrial = user.freeTrialUsed === true && user.freeTrialEnds && new Date() < new Date(user.freeTrialEnds);
+  
+  if (hasActiveFreeTrial) {
+    throw new AppError('You already have an active free trial', 400);
+  }
   
   const plans = Subscription.getPlans();
   const selectedPlan = plans[planId];
@@ -106,6 +176,46 @@ exports.createSubscription = asyncHandler(async (req, res) => {
     throw new AppError('Invalid duration', 400);
   }
   
+  // ✅ ONLY activate free trial if user explicitly chooses it AND it's Basic plan AND they haven't used it before
+  const canUseFreeTrial = useFreeTrial === true && planId === 'basic' && user.freeTrialUsed !== true;
+  
+  let startDate = new Date();
+  let endDate = new Date();
+  let finalPrice = price;
+  let paymentStatus = 'paid';
+  let autoRenew = true;
+  let isFreeTrial = false;
+  
+  if (canUseFreeTrial) {
+    finalPrice = 0;
+    endDate.setDate(endDate.getDate() + 7); // 7 days free trial
+    paymentStatus = 'pending';
+    autoRenew = false;
+    isFreeTrial = true;
+    
+    // Update user's free trial status
+    user.freeTrialUsed = true;
+    user.freeTrialStart = startDate;
+    user.freeTrialEnds = endDate;
+    await user.save();
+    
+    console.log(`✅ Free trial ACTIVATED for: ${user.email} until ${endDate}`);
+  } else {
+    // Regular subscription - calculate end date based on duration
+    switch (duration) {
+      case 'monthly':
+        endDate.setMonth(endDate.getMonth() + 1);
+        break;
+      case 'quarterly':
+        endDate.setMonth(endDate.getMonth() + 3);
+        break;
+      case 'yearly':
+        endDate.setFullYear(endDate.getFullYear() + 1);
+        break;
+    }
+    console.log(`✅ Subscription created for: ${user.email} - ${planId} plan`);
+  }
+  
   // Deactivate old subscriptions
   await Subscription.updateMany(
     { user: req.user._id, status: 'active' },
@@ -113,55 +223,86 @@ exports.createSubscription = asyncHandler(async (req, res) => {
   );
   
   // Create new subscription
-  const startDate = new Date();
   const subscription = new Subscription({
     user: req.user._id,
     plan: planId,
-    price,
+    price: finalPrice,
     currency: 'MAD',
-    duration,
+    duration: canUseFreeTrial ? 'monthly' : duration,
     startDate,
-    endDate: new Date(),
+    endDate,
     paymentMethod,
     status: 'active',
-    paymentStatus: 'paid',
+    paymentStatus,
     paymentDate: new Date(),
-    autoRenew: true,
+    autoRenew,
     features: selectedPlan.features
   });
   
-  subscription.endDate = subscription.calculateEndDate();
   await subscription.save();
   
   // Update user's subscription reference
-  await User.findByIdAndUpdate(req.user._id, { subscription: subscription._id });
+  user.subscription = subscription._id;
+  await user.save();
   
-  // Send notification to user
-  await notificationController.createNotification(
-    req.user._id,
-    'subscription',
-    '🎉 Subscription Activated!',
-    `Your ${selectedPlan.name} subscription has been activated. You now have access to all ${selectedPlan.name} features.`,
-    {
-      subscriptionId: subscription._id,
-      plan: planId,
-      price,
-      duration,
-      endDate: subscription.endDate,
-      features: selectedPlan.features
-    }
-  );
-  
-  res.status(201).json({
-    status: 'success',
-    data: {
-      subscription: {
-        ...subscription.toObject(),
-        formattedPrice: subscription.formattedPrice(),
-        planDetails: selectedPlan
+  // Send notification based on subscription type
+  if (canUseFreeTrial) {
+    await notificationController.createNotification(
+      req.user._id,
+      'subscription',
+      '🎁 Free Trial Started!',
+      `Your 7-day free trial for the Basic plan has started. You have until ${endDate.toLocaleDateString()} to enjoy all Basic features for free!`,
+      {
+        subscriptionId: subscription._id,
+        plan: planId,
+        trialDays: 7,
+        trialEnds: endDate,
+        isFreeTrial: true
       }
-    }
-  });
+    );
+    
+    res.status(201).json({
+      status: 'success',
+      data: {
+        subscription: {
+          ...subscription.toObject(),
+          formattedPrice: subscription.formattedPrice(),
+          planDetails: selectedPlan,
+          isFreeTrial: true,
+          trialEnds: endDate,
+          trialDaysRemaining: 7
+        },
+        message: `Free trial activated! You have 7 days free until ${endDate.toLocaleDateString()}`
+      }
+    });
+  } else {
+    await notificationController.createNotification(
+      req.user._id,
+      'subscription',
+      '🎉 Subscription Activated!',
+      `Your ${selectedPlan.name} subscription has been activated. You now have access to all ${selectedPlan.name} features.`,
+      {
+        subscriptionId: subscription._id,
+        plan: planId,
+        price: finalPrice,
+        duration,
+        endDate: subscription.endDate,
+        features: selectedPlan.features
+      }
+    );
+    
+    res.status(201).json({
+      status: 'success',
+      data: {
+        subscription: {
+          ...subscription.toObject(),
+          formattedPrice: subscription.formattedPrice(),
+          planDetails: selectedPlan,
+          isFreeTrial: false
+        }
+      }
+    });
+  }
 });
 
 /**
@@ -213,6 +354,8 @@ exports.getSubscriptionHistory = asyncHandler(async (req, res) => {
   const subscriptions = await Subscription.find({ user: req.user._id })
     .sort({ createdAt: -1 });
   
+  const user = await User.findById(req.user._id);
+  
   res.status(200).json({
     status: 'success',
     results: subscriptions.length,
@@ -221,7 +364,56 @@ exports.getSubscriptionHistory = asyncHandler(async (req, res) => {
         ...sub.toObject(),
         formattedPrice: sub.formattedPrice(),
         isActive: sub.isActive()
-      }))
+      })),
+      freeTrialUsed: user?.freeTrialUsed === true,
+      freeTrialEnds: user?.freeTrialEnds || null
+    }
+  });
+});
+
+/**
+ * Get free trial status
+ * @route GET /api/subscriptions/free-trial-status
+ */
+exports.getFreeTrialStatus = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+  
+  const hasUsedFreeTrial = user?.freeTrialUsed === true;
+  const hasActiveFreeTrial = hasUsedFreeTrial && user?.freeTrialEnds && new Date() < new Date(user.freeTrialEnds);
+  
+  let freeTrialInfo = null;
+  
+  if (hasActiveFreeTrial) {
+    const daysRemaining = Math.ceil((new Date(user.freeTrialEnds) - new Date()) / (1000 * 60 * 60 * 24));
+    freeTrialInfo = {
+      isActive: true,
+      startDate: user.freeTrialStart,
+      endDate: user.freeTrialEnds,
+      daysRemaining: daysRemaining,
+      message: `Free trial active until ${new Date(user.freeTrialEnds).toLocaleDateString()}`
+    };
+    console.log(`✅ Free trial active for: ${user.email} until ${user.freeTrialEnds}`);
+  } else if (hasUsedFreeTrial) {
+    freeTrialInfo = {
+      isActive: false,
+      used: true,
+      message: 'You have already used your free trial'
+    };
+  } else {
+    freeTrialInfo = {
+      isActive: false,
+      used: false,
+      available: true,
+      message: 'You are eligible for a 7-day free trial on the Basic plan'
+    };
+  }
+  
+  res.status(200).json({
+    status: 'success',
+    data: {
+      freeTrial: freeTrialInfo,
+      canStartFreeTrial: !hasUsedFreeTrial,
+      hasActiveFreeTrial
     }
   });
 });
@@ -233,8 +425,10 @@ exports.getSubscriptionHistory = asyncHandler(async (req, res) => {
 exports.handleWebhook = asyncHandler(async (req, res) => {
   const { paymentReference, userId, planId, duration, paymentMethod } = req.body;
   
-  // Verify payment with bank API (implement based on your payment provider)
-  // This is a placeholder for actual payment verification
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
   
   const plans = Subscription.getPlans();
   const selectedPlan = plans[planId];
@@ -254,6 +448,19 @@ exports.handleWebhook = asyncHandler(async (req, res) => {
   );
   
   const startDate = new Date();
+  let endDate = new Date();
+  switch (duration) {
+    case 'monthly':
+      endDate.setMonth(endDate.getMonth() + 1);
+      break;
+    case 'quarterly':
+      endDate.setMonth(endDate.getMonth() + 3);
+      break;
+    case 'yearly':
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      break;
+  }
+  
   const subscription = new Subscription({
     user: userId,
     plan: planId,
@@ -261,7 +468,7 @@ exports.handleWebhook = asyncHandler(async (req, res) => {
     currency: 'MAD',
     duration,
     startDate,
-    endDate: new Date(),
+    endDate,
     paymentMethod: paymentMethod || 'bank_transfer',
     paymentReference,
     status: 'active',
@@ -271,11 +478,11 @@ exports.handleWebhook = asyncHandler(async (req, res) => {
     features: selectedPlan.features
   });
   
-  subscription.endDate = subscription.calculateEndDate();
   await subscription.save();
   
   // Update user's subscription reference
-  await User.findByIdAndUpdate(userId, { subscription: subscription._id });
+  user.subscription = subscription._id;
+  await user.save();
   
   // Send notification to user
   await notificationController.createNotification(
@@ -310,15 +517,22 @@ exports.checkSubscription = asyncHandler(async (req, res) => {
   });
   
   const hasActiveSubscription = subscription && subscription.isActive();
+  const user = await User.findById(req.user._id);
+  const hasActiveFreeTrial = user?.freeTrialUsed === true && user?.freeTrialEnds && new Date() < new Date(user.freeTrialEnds);
   
   res.status(200).json({
     status: 'success',
     data: {
       hasActiveSubscription,
+      hasActiveFreeTrial,
       subscription: hasActiveSubscription ? {
         plan: subscription.plan,
         endDate: subscription.endDate,
         daysRemaining: Math.max(0, Math.ceil((subscription.endDate - new Date()) / (1000 * 60 * 60 * 24)))
+      } : null,
+      freeTrial: hasActiveFreeTrial ? {
+        endDate: user.freeTrialEnds,
+        daysRemaining: Math.max(0, Math.ceil((user.freeTrialEnds - new Date()) / (1000 * 60 * 60 * 24)))
       } : null
     }
   });

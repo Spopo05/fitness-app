@@ -29,5 +29,8 @@ router.get('/history', subscriptionController.getSubscriptionHistory);
 
 // Webhook for payment callbacks (no auth - called by payment provider)
 router.post('/webhook', subscriptionController.handleWebhook);
+// free-trial
+router.get('/can-start-free-trial', authenticate, subscriptionController.canStartFreeTrial);
+router.get('/free-trial-status', authenticate, subscriptionController.getFreeTrialStatus);
 
 module.exports = router;

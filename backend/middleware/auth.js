@@ -40,7 +40,6 @@ exports.authenticate = async (req, res, next) => {
 
 /**
  * Role-based authorization middleware
- * @param {Array} roles - Array of allowed roles
  */
 exports.authorize = (roles = []) => {
   return (req, res, next) => {
@@ -57,26 +56,45 @@ exports.authorize = (roles = []) => {
 };
 
 /**
- * Check if user has an active subscription
+ * Check if user has an active subscription or free trial
  */
 exports.requireActiveSubscription = async (req, res, next) => {
   try {
     if (!req.user) {
       return res.status(401).json({ message: 'Authentication required' });
     }
-    
-    // Admin and coach roles bypass subscription check
+
+    // ✅ Check email verification
+    if (!req.user.emailVerified) {
+      return res.status(403).json({ message: 'Please verify your email before accessing this feature' });
+    }
+
+    // ✅ Admin and coach bypass
     if (['admin', 'coach'].includes(req.user.role)) {
       return next();
     }
-    
+
     const user = await User.findById(req.user._id).populate('subscription');
-    
-    if (!user.subscription || user.subscription.status !== 'active') {
-      return res.status(403).json({ message: 'Active subscription required' });
+
+    // ✅ 1. عنده subscription active
+    if (user.subscription && user.subscription.status === 'active') {
+      return next();
     }
-    
-    next();
+
+    // ✅ 2. ماعندوش subscription — شوف free trial
+    if (user.freeTrialEnds && new Date() < new Date(user.freeTrialEnds)) {
+      console.log(`✅ Free trial active for: ${user.email} until ${user.freeTrialEnds}`);
+      return next();
+    }
+
+    // ❌ 3. لا subscription لا free trial
+    const trialExpired = user.freeTrialEnds && new Date() > new Date(user.freeTrialEnds);
+    return res.status(403).json({
+      message: trialExpired
+        ? 'Your free trial has expired. Please subscribe to continue.'
+        : 'Active subscription required to access this feature'
+    });
+
   } catch (error) {
     next(error);
   }

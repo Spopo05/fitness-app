@@ -105,13 +105,37 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
+  emailVerified: {
+    type: Boolean,
+    default: false
   },
-  updatedAt: {
+  emailVerificationToken: {
+    type: String
+  },
+  emailVerificationExpires: {
+    type: Date
+  },
+  // ✅ Free trial
+  freeTrialStart: {
     type: Date,
-    default: Date.now
+    default: null
+  },
+  freeTrialEnds: {
+    type: Date,
+    default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  },
+  freeTrialUsed: {
+    type: Boolean,
+    default: false
+  },
+  // Password reset
+  passwordResetToken: {
+    type: String,
+    default: null
+  },
+  passwordResetExpires: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true
@@ -142,6 +166,11 @@ userSchema.methods.getProfile = function() {
   const profile = this.toObject();
   delete profile.password;
   return profile;
+};
+
+// ✅ Method to check if free trial is active
+userSchema.methods.isInFreeTrial = function() {
+  return this.freeTrialEnds && new Date() < new Date(this.freeTrialEnds);
 };
 
 const User = mongoose.model('User', userSchema);

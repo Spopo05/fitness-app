@@ -1,11 +1,174 @@
+// backend/controllers/coach.controller.js
 const User = require('../models/user.model');
 const DietPlan = require('../models/dietPlan.model');
 const Workout = require('../models/workout.model');
+const Subscription = require('../models/subscription.model');
+const Media = require('../models/media.model'); // Add this
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const notificationController = require('./notification.controller');
+const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+
+// ==================== MEDIA FUNCTIONS ====================
 
 /**
- * Get coach's users
+ * Upload media (image/video) to coach profile
+ * @route POST /api/coaches/media/upload
+ */
+exports.uploadMedia = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'coach') {
+    throw new AppError('Access denied', 403);
+  }
+
+  if (!req.file) {
+    throw new AppError('No file uploaded', 400);
+  }
+
+  const file = req.file;
+  const mediaType = file.mimetype.startsWith('video/') ? 'video' : 'image';
+  
+  // Build URL for the uploaded file
+  const url = file.path.replace(/\\/g, '/');
+
+  // Create media record in database
+  const media = await Media.create({
+    coach: req.user._id,
+    url: url,
+    type: mediaType,
+    title: req.body.title || '',
+    description: req.body.description || '',
+    size: file.size,
+    mimeType: file.mimetype
+  });
+
+  res.status(201).json({
+    status: 'success',
+    data: {
+      media
+    }
+  });
+});
+
+/**
+ * Get coach's media
+ * @route GET /api/coaches/media
+ */
+exports.getMedia = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'coach') {
+    throw new AppError('Access denied', 403);
+  }
+
+  const media = await Media.find({ coach: req.user._id })
+    .sort({ createdAt: -1 });
+
+  res.status(200).json({
+    status: 'success',
+    results: media.length,
+    data: {
+      media
+    }
+  });
+});
+
+/**
+ * Delete media
+ * @route DELETE /api/coaches/media/:mediaId
+ */
+exports.deleteMedia = asyncHandler(async (req, res) => {
+  const { mediaId } = req.params;
+
+  if (req.user.role !== 'coach') {
+    throw new AppError('Access denied', 403);
+  }
+
+  const media = await Media.findOne({
+    _id: mediaId,
+    coach: req.user._id
+  });
+
+  if (!media) {
+    throw new AppError('Media not found', 404);
+  }
+
+  // Delete file from filesystem
+  const fullPath = path.join(__dirname, '..', media.url);
+  if (fs.existsSync(fullPath)) {
+    fs.unlinkSync(fullPath);
+  }
+
+  // Delete database record
+  await media.deleteOne();
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Media deleted successfully'
+  });
+});
+
+/**
+ * Get public coach media (for client viewing)
+ * @route GET /api/coaches/:coachId/media/public
+ */
+exports.getPublicMedia = asyncHandler(async (req, res) => {
+  const { coachId } = req.params;
+
+  const coach = await User.findById(coachId);
+  if (!coach || coach.role !== 'coach') {
+    throw new AppError('Coach not found', 404);
+  }
+
+  const media = await Media.find({ coach: coachId, isPublic: true })
+    .sort({ createdAt: -1 })
+    .limit(20);
+
+  res.status(200).json({
+    status: 'success',
+    results: media.length,
+    data: {
+      media
+    }
+  });
+});
+
+// ==================== DEBUG FUNCTIONS ====================
+
+/**
+ * DEBUG: Get subscription info for debugging
+ * @route GET /api/coaches/debug-subscriptions
+ */
+exports.debugSubscriptions = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'coach') {
+    throw new AppError('Access denied', 403);
+  }
+
+  const users = await User.find({
+    coach: req.user._id,
+    role: 'user'
+  }).select('_id name email');
+
+  const userIds = users.map(u => u._id.toString());
+  const allSubscriptions = await Subscription.find({}).lean();
+  const objectIdUserIds = users.map(u => new mongoose.Types.ObjectId(u._id));
+  const userSubscriptions = await Subscription.find({ 
+    user: { $in: objectIdUserIds }
+  }).lean();
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      coachUsers: users,
+      allSubscriptionsInDb: allSubscriptions,
+      filteredSubscriptions: userSubscriptions,
+      userIdsUsed: userIds
+    }
+  });
+});
+
+// ==================== USER FUNCTIONS ====================
+
+/**
+ * Get coach's users with subscription details
  * @route GET /api/coaches/users
  */
 exports.getUsers = asyncHandler(async (req, res) => {
@@ -16,19 +179,56 @@ exports.getUsers = asyncHandler(async (req, res) => {
   const users = await User.find({
     coach: req.user._id,
     role: 'user'
-  }).select('name email profilePicture goals weightHistory subscription dietPlans');
+  }).select('name email profilePicture goals weightHistory freeTrialEnds freeTrialStart height createdAt');
+
+  const objectIdUserIds = users.map(user => new mongoose.Types.ObjectId(user._id));
+  
+  const subscriptions = await Subscription.find({ 
+    user: { $in: objectIdUserIds }
+  }).sort({ createdAt: -1 }).lean();
+
+  const subscriptionMap = new Map();
+  subscriptions.forEach(sub => {
+    const userId = sub.user.toString();
+    if (!subscriptionMap.has(userId)) {
+      subscriptionMap.set(userId, sub);
+    }
+  });
+
+  const usersWithSubscriptions = users.map(user => {
+    const userObj = user.toObject();
+    const subscription = subscriptionMap.get(user._id.toString());
+    
+    if (subscription) {
+      userObj.subscription = {
+        id: subscription._id,
+        plan: subscription.plan,
+        status: subscription.status,
+        price: subscription.price,
+        duration: subscription.duration,
+        startDate: subscription.startDate,
+        endDate: subscription.endDate,
+        paymentMethod: subscription.paymentMethod,
+        autoRenew: subscription.autoRenew
+      };
+    } else {
+      userObj.subscription = null;
+    }
+    
+    return userObj;
+  });
 
   res.status(200).json({
     status: 'success',
-    results: users.length,
+    results: usersWithSubscriptions.length,
     data: {
-      users
+      users: usersWithSubscriptions
     }
   });
 });
 
 /**
- * Get user details
+ * Get user details with subscription
  * @route GET /api/coaches/users/:userId
  */
 exports.getUserDetails = asyncHandler(async (req, res) => {
@@ -41,16 +241,37 @@ exports.getUserDetails = asyncHandler(async (req, res) => {
   const user = await User.findOne({
     _id: userId,
     coach: req.user._id
-  }).populate('dietPlans');
+  }).select('-password').populate('dietPlans');
 
   if (!user) {
     throw new AppError('User not found or not assigned to you', 404);
   }
 
+  const subscription = await Subscription.findOne({ 
+    user: new mongoose.Types.ObjectId(userId) 
+  }).sort({ createdAt: -1 }).lean();
+  
+  const userObj = user.toObject();
+  if (subscription) {
+    userObj.subscription = {
+      id: subscription._id,
+      plan: subscription.plan,
+      status: subscription.status,
+      price: subscription.price,
+      duration: subscription.duration,
+      startDate: subscription.startDate,
+      endDate: subscription.endDate,
+      paymentMethod: subscription.paymentMethod,
+      autoRenew: subscription.autoRenew
+    };
+  } else {
+    userObj.subscription = null;
+  }
+
   res.status(200).json({
     status: 'success',
     data: {
-      user: user.getProfile()
+      user: userObj
     }
   });
 });
@@ -79,7 +300,6 @@ exports.createDietPlan = asyncHandler(async (req, res) => {
     throw new AppError('User not found or not assigned to you', 404);
   }
 
-  // Calculate expiration date
   let expiresAt;
   if (expiresInHours) {
     expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
@@ -104,14 +324,12 @@ exports.createDietPlan = asyncHandler(async (req, res) => {
     isActive: true
   });
 
-  // Push to dietPlans array
   if (!user.dietPlans) {
     user.dietPlans = [];
   }
   user.dietPlans.push(dietPlan._id);
   await user.save();
 
-  // After creating diet plan
   await notificationController.createNotification(
     userId,
     'diet_plan',
@@ -168,7 +386,7 @@ exports.createWorkout = asyncHandler(async (req, res) => {
     notes,
     status: 'scheduled'
   });
-  // After creating workout
+
   await notificationController.createNotification(
     userId,
     'workout',
@@ -176,6 +394,7 @@ exports.createWorkout = asyncHandler(async (req, res) => {
     `Coach ${req.user.name} assigned a new workout for you`,
     { workoutId: workout._id }
   );
+
   res.status(201).json({
     status: 'success',
     data: {
@@ -318,7 +537,6 @@ exports.getClientsDietStatus = asyncHandler(async (req, res) => {
     };
   });
 
-  // Calculate stats
   const stats = {
     total: clientsWithStatus.length,
     completed: clientsWithStatus.filter(c => c.status === 'completed').length,
