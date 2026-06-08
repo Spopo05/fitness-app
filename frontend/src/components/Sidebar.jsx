@@ -1,8 +1,8 @@
 import { Link, useLocation } from 'react-router-dom'
 import { 
   Users, MessageCircle, User, Dumbbell, Utensils, CreditCard, 
-  LayoutDashboard, Sparkles, X, ChevronLeft, ChevronRight, LogOut, Settings,
-  Bot, Brain, Zap, Crown, Star
+  LayoutDashboard, Sparkles, X, Crown, ChevronLeft, ChevronRight, LogOut, Settings,
+  Bot, Brain, Zap, Gift, BarChart3, Phone, Mail, Headphones
 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTranslation } from 'react-i18next'
@@ -50,7 +50,9 @@ const Sidebar = ({ isOpen, onClose, userRole, isRTL = false }) => {
         { name: t('sidebar.dashboard'), href: '/', icon: LayoutDashboard },
         { name: t('sidebar.users'), href: '/users', icon: Users },
         { name: t('sidebar.subscriptions'), href: '/subscriptions', icon: CreditCard },
-        { name: t('sidebar.profile'), href: '/profile', icon: User },
+        { name: 'Free Trial', href: '/admin/free-trial', icon: Gift },
+        { name: 'Reports', href: '/admin/reports', icon: BarChart3 },
+        { name: 'Contact Messages', href: '/admin/contacts', icon: Mail }, // Added for admin
       ]
     }
     
@@ -61,6 +63,7 @@ const Sidebar = ({ isOpen, onClose, userRole, isRTL = false }) => {
         { name: t('sidebar.myClients'), href: '/clients', icon: Users },
         { name: t('sidebar.messages'), href: '/messages', icon: MessageCircle },
         { name: t('sidebar.profile'), href: '/profile', icon: User },
+        { name: 'Contact Us', href: '/contact', icon: Phone }, // Added for coach
       ]
     }
     
@@ -87,6 +90,7 @@ const Sidebar = ({ isOpen, onClose, userRole, isRTL = false }) => {
         { name: t('sidebar.messages'), href: '/messages', icon: MessageCircle },
         { name: t('sidebar.subscription'), href: '/subscription', icon: Sparkles },
         { name: t('sidebar.profile'), href: '/profile', icon: User },
+        { name: 'Contact Us', href: '/contact', icon: Headphones }, // Added for user
       )
       
       return items
@@ -96,6 +100,7 @@ const Sidebar = ({ isOpen, onClose, userRole, isRTL = false }) => {
     return [
       { name: t('sidebar.dashboard'), href: '/', icon: LayoutDashboard },
       { name: t('sidebar.profile'), href: '/profile', icon: User },
+      { name: 'Contact Us', href: '/contact', icon: Phone },
     ]
   }
 
@@ -181,7 +186,7 @@ const Sidebar = ({ isOpen, onClose, userRole, isRTL = false }) => {
                   <User className="h-5 w-5 text-white" />
                 )}
               </div>
-              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+              <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 ring-white"></div>
               {role === 'user' && subscription?.plan === 'elite' && (
                 <div className="absolute -top-1 -right-1">
                   <Crown className="h-3 w-3 text-yellow-500" />

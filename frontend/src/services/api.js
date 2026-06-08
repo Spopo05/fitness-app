@@ -19,7 +19,6 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Helper to get translated message
 const getMessage = (key, defaultMsg) => {
   const t = i18n.t;
   return t(key) || defaultMsg;
@@ -27,7 +26,6 @@ const getMessage = (key, defaultMsg) => {
 
 api.interceptors.response.use(
   (response) => {
-    // Handle success messages from backend
     const messageKey = response.data?.messageKey;
     const message = response.data?.message;
     
@@ -51,9 +49,8 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       window.location.href = '/login';
     } else if (status === 403) {
-      toast.error(getMessage('errors.subscriptionRequired', 'Subscription required'));
-    } else if (message) {
-      toast.error(message);
+  return Promise.reject(error);
+ toast.error(message);
     } else {
       toast.error(getMessage('errors.somethingWentWrong', 'Something went wrong'));
     }

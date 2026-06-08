@@ -24,9 +24,12 @@ import {
   Dumbbell,
   Battery,
   Crown,
-  Medal
+  Medal,
+  Gift,
+  AlertCircle,
+  Timer
 } from 'lucide-react'
-import { format, differenceInHours } from 'date-fns'
+import { format, differenceInHours, differenceInDays, differenceInMinutes } from 'date-fns'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import api from '../../services/api'
 import LoadingSpinner from '../../components/LoadingSpinner'
@@ -39,9 +42,18 @@ const Dashboard = () => {
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [selectedCoach, setSelectedCoach] = useState(null)
   const [hoveredStat, setHoveredStat] = useState(null)
+  const [currentTime, setCurrentTime] = useState(new Date())
 
   const isRTL = i18n.language === 'ar'
   const isFrench = i18n.language === 'fr'
+
+  // Update current time every minute for accurate countdown
+  useState(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 60000) // Update every minute
+    return () => clearInterval(timer)
+  }, [])
 
   const getText = (en, fr, ar) => {
     if (isFrench) return fr
@@ -106,6 +118,20 @@ const Dashboard = () => {
     retry: false,
   })
 
+  // Fetch subscription info
+  const { data: subscription } = useQuery({
+    queryKey: ['currentSubscription'],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/subscriptions/current')
+        return response.data.data.subscription
+      } catch {
+        return null
+      }
+    },
+    retry: false,
+  })
+
   const hasMultiplePlans = allDietPlans?.length > 1
   const dietPlansCount = allDietPlans?.length || 0
 
@@ -127,6 +153,77 @@ const Dashboard = () => {
   const firstWeight = weightHistory?.[0]?.weight
   const weightChange = latestWeight && firstWeight ? (latestWeight - firstWeight).toFixed(1) : null
   const isWeightDown = weightChange && weightChange < 0
+
+  // Calculate Free Trial Info with HOURS
+  const freeTrialEnds = user?.freeTrialEnds ? new Date(user.freeTrialEnds) : null
+  const hasActiveSubscription = subscription?.status === 'active'
+  const isOnFreeTrial = freeTrialEnds && currentTime < freeTrialEnds && !hasActiveSubscription
+  
+  // Get detailed time remaining
+  const getTimeRemaining = () => {
+    if (!freeTrialEnds) return null
+    const totalHours = differenceInHours(freeTrialEnds, currentTime)
+    const days = Math.floor(totalHours / 24)
+    const hours = totalHours % 24
+    const minutes = differenceInMinutes(freeTrialEnds, currentTime) % 60
+    
+    return { days, hours, minutes, totalHours }
+  }
+  
+  const timeRemaining = getTimeRemaining()
+  const freeTrialDaysLeft = timeRemaining?.days || 0
+  const freeTrialHoursLeft = timeRemaining?.hours || 0
+  const freeTrialMinutesLeft = timeRemaining?.minutes || 0
+  const totalHoursLeft = timeRemaining?.totalHours || 0
+
+  // Format time remaining string based on remaining time
+  const getTimeRemainingText = () => {
+    if (totalHoursLeft <= 0) return getText('Expired', 'Expiré', 'منتهية')
+    
+    if (totalHoursLeft < 24) {
+      // Less than 24 hours - show hours and minutes
+      if (freeTrialHoursLeft === 0 && freeTrialMinutesLeft > 0) {
+        return getText(
+          `${freeTrialMinutesLeft} minute${freeTrialMinutesLeft !== 1 ? 's' : ''}`,
+          `${freeTrialMinutesLeft} minute${freeTrialMinutesLeft !== 1 ? 's' : ''}`,
+          `${freeTrialMinutesLeft} ${freeTrialMinutesLeft !== 1 ? 'دقائق' : 'دقيقة'}`
+        )
+      }
+      if (freeTrialMinutesLeft > 0) {
+        return getText(
+          `${freeTrialHoursLeft} hour${freeTrialHoursLeft !== 1 ? 's' : ''} and ${freeTrialMinutesLeft} minute${freeTrialMinutesLeft !== 1 ? 's' : ''}`,
+          `${freeTrialHoursLeft} heure${freeTrialHoursLeft !== 1 ? 's' : ''} et ${freeTrialMinutesLeft} minute${freeTrialMinutesLeft !== 1 ? 's' : ''}`,
+          `${freeTrialHoursLeft} ${freeTrialHoursLeft !== 1 ? 'ساعات' : 'ساعة'} و ${freeTrialMinutesLeft} ${freeTrialMinutesLeft !== 1 ? 'دقائق' : 'دقيقة'}`
+        )
+      }
+      return getText(
+        `${freeTrialHoursLeft} hour${freeTrialHoursLeft !== 1 ? 's' : ''}`,
+        `${freeTrialHoursLeft} heure${freeTrialHoursLeft !== 1 ? 's' : ''}`,
+        `${freeTrialHoursLeft} ${freeTrialHoursLeft !== 1 ? 'ساعات' : 'ساعة'}`
+      )
+    }
+    
+    // More than 24 hours - show days
+    return getText(
+      `${freeTrialDaysLeft} day${freeTrialDaysLeft !== 1 ? 's' : ''}`,
+      `${freeTrialDaysLeft} jour${freeTrialDaysLeft !== 1 ? 's' : ''}`,
+      `${freeTrialDaysLeft} ${freeTrialDaysLeft !== 1 ? 'أيام' : 'يوم'}`
+    )
+  }
+
+  // Calculate percentage of trial used
+  const getTrialProgressPercentage = () => {
+    if (!freeTrialEnds || !user?.freeTrialStart) return 0
+    const start = new Date(user.freeTrialStart)
+    const end = freeTrialEnds
+    const total = end - start
+    const elapsed = currentTime - start
+    const percentage = (elapsed / total) * 100
+    return Math.min(100, Math.max(0, percentage))
+  }
+
+  const trialProgress = getTrialProgressPercentage()
+  const isTrialEndingSoon = totalHoursLeft <= 24 && totalHoursLeft > 0
 
   // Calculate BMI
   const bmi = user?.height && latestWeight ? (latestWeight / ((user.height / 100) ** 2)).toFixed(1) : null
@@ -217,6 +314,130 @@ const Dashboard = () => {
 
   return (
     <div className="space-y-8">
+      {/* Free Trial Banner with Hours Display */}
+      {isOnFreeTrial && (
+        <div className="bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl p-4 text-white shadow-lg">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center animate-pulse">
+                <Gift className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg">
+                  {getText('Free Trial Active!', 'Essai gratuit actif !', 'الفترة التجريبية المجانية نشطة!')}
+                </h3>
+                <p className="text-sm text-white/90">
+                  {getText(
+                    `Your free trial ends in ${getTimeRemainingText()}.`,
+                    `Votre essai gratuit se termine dans ${getTimeRemainingText()}.`,
+                    `تنتهي الفترة التجريبية المجانية بعد ${getTimeRemainingText()}.`
+                  )}
+                </p>
+                {isTrialEndingSoon && (
+                  <p className="text-xs text-yellow-200 mt-1 flex items-center gap-1">
+                    <Timer className="h-3 w-3 animate-pulse" />
+                    {getText(
+                      'Hurry up! Your free trial is ending soon. Subscribe now to continue your journey!',
+                      'Dépêchez-vous ! Votre essai gratuit se termine bientôt. Abonnez-vous maintenant pour continuer !',
+                      'اسرع! الفترة التجريبية المجانية تنتهي قريباً. اشترك الآن لمواصلة رحلتك!'
+                    )}
+                  </p>
+                )}
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/subscription')}
+              className="px-4 py-2 bg-white text-purple-600 rounded-xl font-medium hover:bg-gray-100 transition shadow-md flex items-center gap-2"
+            >
+              <Crown className="h-4 w-4" />
+              {getText('Subscribe Now', 'S\'abonner maintenant', 'اشترك الآن')}
+            </button>
+          </div>
+          
+          {/* Enhanced Progress Bar with time breakdown */}
+          <div className="mt-4">
+            <div className="flex justify-between text-xs text-white/70 mb-2">
+              <span className="flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                {getText('Trial ends in', 'L\'essai se termine dans', 'تنتهي التجربة بعد')}
+              </span>
+              <div className="flex gap-3">
+                {totalHoursLeft >= 24 && (
+                  <span className="font-medium text-white">
+                    {freeTrialDaysLeft}d
+                  </span>
+                )}
+                {(totalHoursLeft < 24 || totalHoursLeft >= 24) && (
+                  <span className="font-medium text-white">
+                    {freeTrialHoursLeft}h
+                  </span>
+                )}
+                {totalHoursLeft < 24 && freeTrialMinutesLeft > 0 && (
+                  <span className="font-medium text-white">
+                    {freeTrialMinutesLeft}m
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="h-2 bg-white/20 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-white rounded-full transition-all duration-500 relative"
+                style={{ width: `${100 - trialProgress}%` }}
+              >
+                {isTrialEndingSoon && (
+                  <div className="absolute right-0 top-0 h-full w-1 bg-red-400 animate-pulse"></div>
+                )}
+              </div>
+            </div>
+            {/* Additional info for last 24 hours */}
+            {totalHoursLeft <= 24 && totalHoursLeft > 0 && (
+              <div className="mt-2 text-center">
+                <span className="text-xs text-yellow-200 animate-pulse inline-flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" />
+                  {getText(
+                    `Only ${freeTrialHoursLeft} hour${freeTrialHoursLeft !== 1 ? 's' : ''} and ${freeTrialMinutesLeft} minute${freeTrialMinutesLeft !== 1 ? 's' : ''} remaining!`,
+                    `Seulement ${freeTrialHoursLeft} heure${freeTrialHoursLeft !== 1 ? 's' : ''} et ${freeTrialMinutesLeft} minute${freeTrialMinutesLeft !== 1 ? 's' : ''} restantes !`,
+                    `فقط ${freeTrialHoursLeft} ${freeTrialHoursLeft !== 1 ? 'ساعات' : 'ساعة'} و ${freeTrialMinutesLeft} ${freeTrialMinutesLeft !== 1 ? 'دقائق' : 'دقيقة'} متبقية!`
+                  )}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Free Trial Expired Banner */}
+      {freeTrialEnds && currentTime >= freeTrialEnds && !hasActiveSubscription && (
+        <div className="bg-gradient-to-r from-red-500 to-orange-500 rounded-2xl p-4 text-white shadow-lg">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="font-bold text-lg">
+                  {getText('Free Trial Expired', 'Essai gratuit expiré', 'انتهت الفترة التجريبية المجانية')}
+                </h3>
+                <p className="text-sm text-white/90">
+                  {getText(
+                    'Your free trial has ended. Subscribe now to continue accessing premium features!',
+                    'Votre essai gratuit est terminé. Abonnez-vous maintenant pour continuer à accéder aux fonctionnalités premium !',
+                    'انتهت الفترة التجريبية المجانية. اشترك الآن لمواصلة الوصول إلى الميزات المميزة!'
+                  )}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/subscription')}
+              className="px-4 py-2 bg-white text-red-600 rounded-xl font-medium hover:bg-gray-100 transition shadow-md flex items-center gap-2"
+            >
+              <Crown className="h-4 w-4" />
+              {getText('Subscribe Now', 'S\'abonner maintenant', 'اشترك الآن')}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Hero Section with Gradient */}
       <div className="relative overflow-hidden bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 rounded-3xl shadow-xl">
         <div className="absolute inset-0 bg-black/10"></div>
@@ -244,6 +465,20 @@ const Dashboard = () => {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              {isOnFreeTrial && (
+                <div className="bg-white/10 backdrop-blur-sm rounded-full px-4 py-2">
+                  <div className="flex items-center gap-2">
+                    <Timer className="h-4 w-4 text-yellow-400" />
+                    <span className="text-white text-sm font-medium">
+                      {totalHoursLeft < 24 ? (
+                        `${freeTrialHoursLeft}h ${freeTrialMinutesLeft}m`
+                      ) : (
+                        `${freeTrialDaysLeft}d ${freeTrialHoursLeft}h`
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )}
               <div className="bg-white/10 backdrop-blur-sm rounded-full px-4 py-2">
                 <div className="flex items-center gap-2">
                   <Battery className="h-4 w-4 text-green-400" />
@@ -322,6 +557,7 @@ const Dashboard = () => {
         })}
       </div>
 
+      {/* Rest of your dashboard remains the same... */}
       {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Weight Chart */}

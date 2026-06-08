@@ -245,7 +245,8 @@
   "serviceUnavailable": "Service unavailable",
   "sessionExpired": "Session expired. Please log in again.",
   "subscriptionRequired": "Active subscription required to access this feature",
-  "connectionError": "Connection error. Please check your internet."
+  "connectionError": "Connection error. Please check your internet.",
+  "accessDenied": "Access denied"
 },
 "success": {
   "profileUpdated": "Profile updated successfully",

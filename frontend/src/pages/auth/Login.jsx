@@ -1,15 +1,30 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useForm } from 'react-hook-form'
-import { Eye, EyeOff, Dumbbell, Mail, Lock, ArrowRight, Sparkles } from 'lucide-react'
-import { useAuth } from '../../contexts/AuthContext'
+import { useTranslation } from 'react-i18next'
+import { 
+  Eye, EyeOff, Dumbbell, Mail, Lock, ArrowRight, 
+  Shield, CheckCircle, Sparkles, Crown
+} from 'lucide-react'
 import LoadingSpinner from '../../components/LoadingSpinner'
+import api from '../../services/api'
 
 const Login = () => {
+  const { t, i18n } = useTranslation()
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
-  const { login } = useAuth()
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
+  const navigate = useNavigate()
+
+  const isRTL = i18n.language === 'ar'
+  const isFrench = i18n.language === 'fr'
+
+  const getText = (en, fr, ar) => {
+    if (isFrench) return fr
+    if (isRTL) return ar
+    return en
+  }
 
   const {
     register,
@@ -18,42 +33,83 @@ const Login = () => {
   } = useForm()
 
   const onSubmit = async (data) => {
-    setLoading(true)
-    setError(null)
-    try {
-      await login(data.email, data.password)
-    } catch (error) {
-      setError(error.response?.data?.message || 'Login failed. Please try again.')
-    } finally {
-      setLoading(false)
+  setLoading(true);
+  setError(null);
+
+  try {
+    const response = await api.post('/auth/login', {
+      email: data.email,
+      password: data.password,
+    });
+
+    localStorage.setItem('token', response.data.token);
+    localStorage.setItem('user', JSON.stringify(response.data.data.user));
+
+    window.location.href = '/dashboard';
+  } catch (err) {
+    console.log('LOGIN ERROR:', err.response?.data);
+
+    const status = err.response?.status;
+    const message = err.response?.data?.message || '';
+
+    // Email not verified
+    if (
+      status === 403 &&
+      message.toLowerCase().includes('verify your email')
+    ) {
+      setError(message);
+      return;
     }
+
+    // Subscription required
+    if (
+      status === 403 &&
+      (
+        message.toLowerCase().includes('subscription') ||
+        message.toLowerCase().includes('active subscription')
+      )
+    ) {
+      setShowSubscriptionModal(true);
+      return;
+    }
+
+    // Invalid credentials
+    if (status === 401) {
+      setError('Invalid email or password');
+      return;
+    }
+
+    setError(message || 'Login failed. Please try again.');
+  } finally {
+    setLoading(false);
   }
+};
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left side - Form */}
-      <div className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:px-8 bg-white">
-        <div className="w-full max-w-sm">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 p-4" dir={isRTL ? 'rtl' : 'ltr'}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+        <div className="h-1.5 bg-gradient-to-r from-blue-600 to-purple-600"></div>
+        
+        <div className="p-6 sm:p-8">
           {/* Logo */}
-          <div className="mb-8">
+          <div className="flex justify-center mb-6">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 flex items-center justify-center shadow-lg">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 flex items-center justify-center shadow-md">
                 <Dumbbell className="h-5 w-5 text-white" />
               </div>
-              <span className="text-xl font-bold text-gray-900">FitnessPro</span>
+              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                FitnessPro
+              </span>
             </div>
           </div>
 
           {/* Welcome Text */}
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Welcome back</h2>
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900">{getText('Welcome back', 'Bon retour', 'مرحباً بعودتك')}</h2>
             <p className="mt-1 text-sm text-gray-500">
-              Don't have an account?{' '}
-              <Link
-                to="/register"
-                className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
-              >
-                Sign up
+              {getText('Don\'t have an account?', 'Vous n\'avez pas de compte ?', 'ليس لديك حساب؟')}{' '}
+              <Link to="/register" className="text-blue-600 hover:text-blue-500 font-medium">
+                {getText('Sign up', 'S\'inscrire', 'التسجيل')}
               </Link>
             </p>
           </div>
@@ -70,7 +126,7 @@ const Login = () => {
             {/* Email Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email address
+                {getText('Email address', 'Adresse email', 'البريد الإلكتروني')}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -78,14 +134,14 @@ const Login = () => {
                 </div>
                 <input
                   {...register('email', {
-                    required: 'Email is required',
+                    required: getText('Email is required', 'L\'email est requis', 'البريد الإلكتروني مطلوب'),
                     pattern: {
                       value: /^\S+@\S+$/i,
-                      message: 'Invalid email address',
+                      message: getText('Invalid email address', 'Adresse email invalide', 'عنوان بريد إلكتروني غير صالح'),
                     },
                   })}
                   type="email"
-                  className="block w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  className="block w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                   placeholder="you@example.com"
                 />
               </div>
@@ -97,17 +153,17 @@ const Login = () => {
             {/* Password Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Password
+                {getText('Password', 'Mot de passe', 'كلمة المرور')}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <Lock className="h-4 w-4 text-gray-400" />
                 </div>
                 <input
-                  {...register('password', { required: 'Password is required' })}
+                  {...register('password', { required: getText('Password is required', 'Le mot de passe est requis', 'كلمة المرور مطلوبة') })}
                   type={showPassword ? 'text' : 'password'}
-                  className="block w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                  placeholder="Enter your password"
+                  className="block w-full pl-9 pr-9 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  placeholder={getText('Enter your password', 'Entrez votre mot de passe', 'أدخل كلمة المرور')}
                 />
                 <button
                   type="button"
@@ -128,11 +184,8 @@ const Login = () => {
 
             {/* Forgot Password */}
             <div className="flex justify-end">
-              <Link
-                to="/forgot-password"
-                className="text-xs text-blue-600 hover:text-blue-500 transition-colors"
-              >
-                Forgot password?
+              <Link to="/forgot-password" className="text-xs text-blue-600 hover:text-blue-500">
+                {getText('Forgot password?', 'Mot de passe oublié ?', 'نسيت كلمة المرور؟')}
               </Link>
             </div>
 
@@ -140,55 +193,82 @@ const Login = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-lg font-medium hover:from-blue-700 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed shadow-sm"
+              className="w-full flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:from-blue-700 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed shadow-md"
             >
               {loading ? (
                 <LoadingSpinner size="sm" />
               ) : (
                 <>
-                  Sign in
-                  <ArrowRight className="ml-2 h-3 w-3" />
+                  {getText('Sign in', 'Se connecter', 'تسجيل الدخول')}
+                  <ArrowRight className="ml-2 h-4 w-4" />
                 </>
               )}
             </button>
           </form>
-        </div>
-      </div>
 
-      {/* Right side - Image with Text */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-900 via-blue-800 to-blue-900 relative overflow-hidden items-center justify-center">
-        {/* Background Image */}
-        <div className="absolute inset-0">
-          <img
-            src="https://images.pexels.com/photos/841130/pexels-photo-841130.jpeg?auto=compress&cs=tinysrgb&w=1200"
-            alt="Fitness training"
-            className="w-full h-full object-cover opacity-40"
-          />
-        </div>
-        
-        {/* Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-900/80 to-blue-800/80"></div>
-
-        {/* Content */}
-        <div className="relative z-10 max-w-md mx-auto text-center px-8">
-          {/* Icon */}
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white/10 backdrop-blur-sm mb-6">
-            <Sparkles className="h-8 w-8 text-yellow-400" />
+          {/* Trust Badges */}
+          <div className="mt-6 pt-4 border-t border-gray-100">
+            <div className="flex justify-center gap-4">
+              <div className="flex items-center gap-1">
+                <Shield className="h-3 w-3 text-green-500" />
+                <span className="text-[10px] text-gray-500">{getText('Secure Login', 'Connexion sécurisée', 'تسجيل دخول آمن')}</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <CheckCircle className="h-3 w-3 text-green-500" />
+                <span className="text-[10px] text-gray-500">{getText('Privacy Protected', 'Confidentialité protégée', 'الخصوصية محمية')}</span>
+              </div>
+            </div>
           </div>
-          
-          {/* Main Message */}
-          <h3 className="text-2xl font-bold text-white mb-4">
-            If you want to achieve a great physique
-          </h3>
-          <p className="text-lg text-blue-200 mb-2">
-            Join us and transform your life with FitnessPro
-          </p>
-          <div className="w-20 h-0.5 bg-gradient-to-r from-blue-400 to-blue-200 mx-auto mt-6"></div>
         </div>
 
-        {/* Bottom Gradient */}
-        <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-blue-900 to-transparent"></div>
+        {/* Decorative Bottom */}
+        <div className="bg-gray-50 px-6 py-3 border-t border-gray-100">
+          <div className="flex items-center justify-center gap-2">
+            <Sparkles className="h-3 w-3 text-blue-400" />
+            <span className="text-[10px] text-gray-500">{getText('Transform your fitness journey', 'Transformez votre parcours fitness', 'حول رحلتك اللياقية')}</span>
+            <Sparkles className="h-3 w-3 text-purple-400" />
+          </div>
+        </div>
       </div>
+
+      {/* Subscription Required Modal */}
+      {showSubscriptionModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowSubscriptionModal(false)}>
+          <div className="bg-white rounded-2xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6">
+              <div className="text-center">
+                <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Crown className="h-10 w-10 text-yellow-600" />
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 mb-2">
+                  {getText('Subscription Required', 'Abonnement requis', 'الاشتراك مطلوب')}
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  {getText(
+                    'You need an active subscription to access this feature.',
+                    'Vous avez besoin d\'un abonnement actif pour accéder à cette fonctionnalité.',
+                    'أنت بحاجة إلى اشتراك نشط للوصول إلى هذه الميزة.'
+                  )}
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setShowSubscriptionModal(false)}
+                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition"
+                  >
+                    {getText('Cancel', 'Annuler', 'إلغاء')}
+                  </button>
+                  <button
+                    onClick={() => navigate('/subscription')}
+                    className="flex-1 px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg font-medium hover:from-blue-700 hover:to-purple-700 transition"
+                  >
+                    {getText('View Plans', 'Voir les offres', 'عرض الخطط')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -351,7 +351,7 @@ const Profile = () => {
 )}
 
       {/* Header with AI Insights - Responsive */}
-      <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl sm:rounded-2xl p-4 sm:p-6 text-white shadow-xl">
+      {/* <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-xl sm:rounded-2xl p-4 sm:p-6 text-white shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -384,7 +384,7 @@ const Profile = () => {
             </div>
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* Profile Card with Background Image - Responsive */}
       <div 
