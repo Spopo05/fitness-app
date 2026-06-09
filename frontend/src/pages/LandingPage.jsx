@@ -842,7 +842,7 @@ const LandingPage = () => {
             <div className="flex gap-6 text-sm text-gray-500">
               <a href="#" className="hover:text-gray-700">{getText('Privacy', 'Confidentialité', 'الخصوصية')}</a>
               <a href="#" className="hover:text-gray-700">{getText('Terms', 'Conditions', 'الشروط')}</a>
-              <a href="#" className="hover:text-gray-700">{getText('Contact', 'Contact', 'اتصل')}</a>
+              <a href="#" className="hover:text-gray-700">{getText('/Contact', 'Contact', 'اتصل')}</a>
             </div>
             <p className="text-xs text-gray-400">
               © 2026 FitnessPro. {getText('All rights reserved.', 'Tous droits réservés.', 'جميع الحقوق محفوظة.')}
